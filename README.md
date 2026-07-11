@@ -46,21 +46,23 @@ First run downloads the whisperX `medium` model (~1.5GB) and the wav2vec2 alignm
 
 ## Install
 
-Clone, then point your agent's skill loader at the `skills/` directory:
+Install into any agent project via the [skills.sh](https://skills.sh) installer:
 
 ```bash
-git clone https://github.com/<you>/video-subtitle-skill.git
+npx skills add ChHsiching/video-subtitle-skill
 ```
 
-If your agent uses the `.agents/skills/` convention, symlink or copy `skills/video-subtitle/` there.
+This works because the repo follows the standard layout the installer walks: a `skills/video-subtitle/SKILL.md` with valid `name` + `description` frontmatter, plus a `.claude-plugin/plugin.json` manifest. The installer copies the skill (including its `scripts/` folder) into your agent's skills directory (`.agents/skills/`, `.claude/skills/`, etc.).
 
-Set up the Python environment once:
+The skill needs a Python environment with `whisperx` — set it up once anywhere on your machine:
 
 ```bash
 python -m venv .venv
 .venv/Scripts/pip install whisperx   # Windows
 # or: source .venv/bin/activate && pip install whisperx   # macOS/Linux
 ```
+
+The skill detects and reuses an existing whisperX environment; it doesn't reinstall.
 
 ## Usage
 
@@ -76,13 +78,14 @@ The `scripts/` directory is usable standalone, without the skill:
 
 ```bash
 # Transcribe (whisperX, CPU, medium model)
-python scripts/transcribe.py input.wav input.en.srt medium
+python skills/video-subtitle/scripts/transcribe.py input.wav input.en.srt medium
 
 # Subtitle utilities
-python scripts/subtitles.py biliteral en.srt zh.srt bilingual.srt   # merge two SRTs
-python scripts/subtitles.py ass bilingual.srt out.ass               # bilingual SRT -> styled ASS
-python scripts/subtitles.py split bilingual.srt zh.srt en.srt       # bilingual -> two pure-language
-python scripts/subtitles.py shorten input.srt out.srt --lang zh     # split cues over the length limit
+SK=skills/video-subtitle/scripts
+python $SK/subtitles.py biliteral en.srt zh.srt bilingual.srt   # merge two SRTs
+python $SK/subtitles.py ass bilingual.srt out.ass               # bilingual SRT -> styled ASS
+python $SK/subtitles.py split bilingual.srt zh.srt en.srt       # bilingual -> two pure-language
+python $SK/subtitles.py shorten input.srt out.srt --lang zh     # split cues over the length limit
 ```
 
 `shorten` exists because whisperX occasionally emits a cue spanning several sentences, which platforms like Bilibili reject (limit ~45 Chinese chars / ~90 ASCII per cue). It splits on sentence punctuation, hard-wraps at commas if a fragment is still too long, and redistributes timestamps proportionally.

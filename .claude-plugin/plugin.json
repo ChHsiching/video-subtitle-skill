@@ -1,0 +1,6 @@
+{
+  "name": "video-subtitle-skill",
+  "skills": [
+    "./skills/video-subtitle"
+  ]
+}

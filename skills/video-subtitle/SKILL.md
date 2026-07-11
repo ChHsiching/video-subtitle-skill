@@ -5,6 +5,8 @@ description: Turn a foreign-language raw video into a bilingual (or single-langu
 
 Turn a **raw** video (foreign audio, no subtitles) into a **cooked** video with bilingual or single-language subtitles. The agent does the translation itself — no external translation API.
 
+The skill ships two scripts in its own `scripts/` folder: `transcribe.py` (whisperX → SRT) and `subtitles.py` (merge / ASS / split / shorten). They live **inside this skill folder** — not in the user's project. Before calling them, resolve their absolute path. If this skill is installed at `.agents/skills/video-subtitle/`, the scripts are at `.agents/skills/video-subtitle/scripts/`. Use the absolute path when invoking, since the user's video may be anywhere on disk.
+
 ## What you produce
 
 By default, for a bilingual run, all of these:
@@ -47,8 +49,10 @@ Done when `input.wav` exists and is non-empty.
 ### Step 2 — Transcribe (whisperX, the slow step)
 
 ```bash
-python scripts/transcribe.py input.wav input.en.srt medium
+python <skill>/scripts/transcribe.py input.wav input.en.srt medium
 ```
+
+`<skill>` is this skill's folder (wherever it's installed — `.agents/skills/video-subtitle` or `.claude/skills/video-subtitle`). Use the absolute path.
 
 Use `medium` unless the user asks for a different size. On CPU this runs at roughly 2x realtime — a 17-minute video takes ~6-8 minutes. Models download on first run only.
 
@@ -71,8 +75,8 @@ Done when `<name>.zh.srt` exists, has the same cue count and timestamps as `<nam
 ### Step 4 — Merge into bilingual SRT + ASS
 
 ```bash
-python scripts/subtitles.py biliteral input.en.srt input.zh.srt input.bilingual.srt
-python scripts/subtitles.py ass input.bilingual.srt input.bilingual.ass
+python <skill>/scripts/subtitles.py biliteral input.en.srt input.zh.srt input.bilingual.srt
+python <skill>/scripts/subtitles.py ass input.bilingual.srt input.bilingual.ass
 ```
 
 If the user only wants single-language output, skip this step.
@@ -98,6 +102,6 @@ Done when `input.cooked.mp4` exists, plays, and a spot-check frame at a speaking
 
 ## Platform notes (only if the user asks about uploading)
 
-- **Bilibili cloud subtitles**: only accepts SRT, one language per upload. Run `python scripts/subtitles.py split input.bilingual.srt out.zh.srt out.en.srt` to get pure-language files. Upload each separately.
-- **Bilibili length limit**: ~45 Chinese chars / ~90 ASCII per cue. The `shorten` subcommand fixes cues that exceed this: `python scripts/subtitles.py shorten input.zh.srt output.zh.srt --lang zh`. Run it if a cue got rejected on upload.
+- **Bilibili cloud subtitles**: only accepts SRT, one language per upload. Run `python <skill>/scripts/subtitles.py split input.bilingual.srt out.zh.srt out.en.srt` to get pure-language files. Upload each separately.
+- **Bilibili length limit**: ~45 Chinese chars / ~90 ASCII per cue. The `shorten` subcommand fixes cues that exceed this: `python <skill>/scripts/subtitles.py shorten input.zh.srt output.zh.srt --lang zh`. Run it if a cue got rejected on upload.
 - **Hard-burned MP4**: works everywhere, no toggle. Hand the user both the cooked MP4 and the SRTs — they decide at upload time which to use (cooked MP4 for platforms that don't support soft subs, raw video + SRT for platforms that do).
