@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Models (huge, downloaded on first run — don't commit)
+*.bin
+*.pt
+*.pth
+models/
+
+# Working files produced by the pipeline
+*.wav
+*.cooked.mp4
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
