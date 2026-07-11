@@ -15,9 +15,9 @@ By default, for a bilingual run, all of these:
 4. `<name>.bilingual.ass` — styled ASS for hard-burning
 5. `<name>.cooked.mp4` — video with subtitles burned into the frame
 
-For single-language (`zh` or `en`), produce only that language's SRT + the cooked MP4.
+For single-language (`zh` or `en`), produce that language's SRT + the cooked MP4.
 
-Always ask the user which of these they want before running if it isn't obvious — the cooked MP4 is the slow step (re-encodes the whole video), and they may only need the SRT files.
+Produce everything by default. More outputs = more choices for the user at upload time. Only skip a step if the user explicitly says they don't want a specific output.
 
 ## Environment reuse — never reinstall blindly
 
@@ -79,9 +79,9 @@ If the user only wants single-language output, skip this step.
 
 Done when `input.bilingual.srt` and `input.bilingual.ass` both exist. Verify the biliteral step reported no cue-count mismatch — if it did, the zh and en SRTs drifted out of sync; fix the translation before continuing.
 
-### Step 5 — Burn subtitles into video (optional, slow)
+### Step 5 — Burn subtitles into video
 
-Only if the user wants a cooked MP4. Hard-burn with libass:
+Hard-burn with libass:
 
 ```bash
 ffmpeg -y -i "input.mp4" -vf "ass=input.bilingual.ass" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a copy -movflags +faststart "input.cooked.mp4"
@@ -98,6 +98,6 @@ Done when `input.cooked.mp4` exists, plays, and a spot-check frame at a speaking
 
 ## Platform notes (only if the user asks about uploading)
 
-- **Bilibili cloud subtitles**: only accepts SRT, one language per upload. Run `python scripts/subtitles.py split input.bilingual.srt out.zh.srt out.en.srt` to get pure-language files. Upload each separately. Soft subtitles — viewer can toggle.
+- **Bilibili cloud subtitles**: only accepts SRT, one language per upload. Run `python scripts/subtitles.py split input.bilingual.srt out.zh.srt out.en.srt` to get pure-language files. Upload each separately.
 - **Bilibili length limit**: ~45 Chinese chars / ~90 ASCII per cue. The `shorten` subcommand fixes cues that exceed this: `python scripts/subtitles.py shorten input.zh.srt output.zh.srt --lang zh`. Run it if a cue got rejected on upload.
-- **Hard-burned MP4**: works everywhere, no toggle, but can't be turned off. If the user uploaded a cooked MP4, they usually don't also need cloud subtitles (they'd double up on screen).
+- **Hard-burned MP4**: works everywhere, no toggle. Hand the user both the cooked MP4 and the SRTs — they decide at upload time which to use (cooked MP4 for platforms that don't support soft subs, raw video + SRT for platforms that do).
