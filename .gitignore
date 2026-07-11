@@ -10,9 +10,18 @@ venv/
 *.pth
 models/
 
-# Working files produced by the pipeline
+# Working files produced by the pipeline — never commit media or outputs
 *.wav
-*.cooked.mp4
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+*.cooked.*
+*.srt
+*.ass
+*.upload.md
+test_output/
 /tmp/
 
 # OS

@@ -16,8 +16,9 @@ By default, for a bilingual run, all of these:
 3. `<name>.bilingual.srt` — bilingual SRT (zh line on top, en below)
 4. `<name>.bilingual.ass` — styled ASS for hard-burning
 5. `<name>.cooked.mp4` — video with subtitles burned into the frame
+6. `<name>.upload.md` — title, description, and chapter timestamps for uploading (Step 6)
 
-For single-language (`zh` or `en`), produce that language's SRT + the cooked MP4.
+For single-language (`zh` or `en`), produce that language's SRT + the cooked MP4 + the upload.md.
 
 Produce everything by default. More outputs = more choices for the user at upload time. Only skip a step if the user explicitly says they don't want a specific output.
 
@@ -81,15 +82,38 @@ python <skill>/scripts/subtitles.py ass input.bilingual.srt input.bilingual.ass
 
 If the user only wants single-language output, skip this step.
 
-Done when `input.bilingual.srt` and `input.bilingual.ass` both exist. Verify the biliteral step reported no cue-count mismatch — if it did, the zh and en SRTs drifted out of sync; fix the translation before continuing.
+**Subtitle placement — ask the user which they want.** Two modes, producing different ASS files:
+
+- **Overlay** (default): subtitles render on top of the picture. The command above.
+- **Bottom-bar**: subtitles sit in a black strip padded below the frame, so nothing in the image is covered. Add `--bottom-bar PX`:
+
+  ```bash
+  python <skill>/scripts/subtitles.py ass input.bilingual.srt input.bilingual.bar.ass --bottom-bar 180
+  ```
+
+  The ASS play resolution grows by `PX` (1080 → 1260) and subtitles land in the strip. A 180px bar fits the two-line bilingual layout on 1080p; ~120px for single-language. Step 5 must `pad` the frame to match, or subtitles render off-screen. Name the bar variant `<name>.bilingual.bar.ass` to keep it apart from the overlay one.
+
+Don't generate both unless the user asks — pick one and use it.
+
+Done when the chosen ASS exists. Verify the biliteral step reported no cue-count mismatch — if it did, the zh and en SRTs drifted out of sync; fix the translation before continuing.
 
 ### Step 5 — Burn subtitles into video
 
-Hard-burn with libass:
+Hard-burn with libass. Use the command that matches the placement chosen in Step 4.
+
+**Overlay** (default):
 
 ```bash
 ffmpeg -y -i "input.mp4" -vf "ass=input.bilingual.ass" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a copy -movflags +faststart "input.cooked.mp4"
 ```
+
+**Bottom-bar** (only with `--bottom-bar PX` in Step 4 — pad a black strip below the frame first, then burn the ASS whose play resolution already accounts for the bar):
+
+```bash
+ffmpeg -y -i "input.mp4" -vf "pad=iw:ih+PX:color=black,ass=input.bilingual.bar.ass" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a copy -movflags +faststart "input.cooked.bar.mp4"
+```
+
+`PX` is the same value passed to `--bottom-bar`. Filters run left-to-right: `pad` grows the frame, `ass` renders into the grown area. Output height becomes `source_height + PX`.
 
 Two gotchas we hit and you will too:
 
@@ -98,7 +122,37 @@ Two gotchas we hit and you will too:
 
 Re-encoding a 17-minute 1080p60 video takes ~5-10 minutes on this machine. Tell the user to expect the wait.
 
-Done when `input.cooked.mp4` exists, plays, and a spot-check frame at a speaking timestamp shows subtitles rendered (the cue for that timestamp is visible). To verify without eyeballing: extract a frame and check the bottom strip has bright (white) pixels above ~2% density — that's the subtitle text.
+Done when `input.cooked.mp4` exists, plays, and a spot-check frame at a speaking timestamp shows subtitles rendered (the cue for that timestamp is visible). To verify without eyeballing: extract a frame and check the bottom strip has bright (white) pixels above ~2% density — that's the subtitle text. In bottom-bar mode also confirm the image region itself is untouched.
+
+### Step 6 — Write the upload metadata
+
+The user is going to post this somewhere. Give them a ready-to-paste title, description, and chapter list — derived from the transcript you just translated, so it actually matches the video. Write it to `<name>.upload.md`.
+
+This is authoring work, like Step 3. You — the agent — write it from the transcript. No script.
+
+**Title.** One line, faithful to what the video is about. Pull the hook from the source if there is one (e.g. "16万Star的仓库,却没有教程" mirrors the original's "...and no tutorial"). Keep it under 30 Chinese characters; don't add clickbait ("神级/必看/震惊"). If the original author has their own framing, mirror it rather than invent your own.
+
+**Description.** The translated summary of what the video covers, plus the provenance the user will need at upload time:
+
+- What the video is, in 2-3 sentences, translated from the source's own framing (don't editorialize)
+- Key points / commands / timestamps, as a short list — these are the terms people will search for
+- Source attribution: author handle, original link, install command (`npx skills add ...`) if it's a skills repo
+- One line: "中英双语字幕,AI 辅助转录 + 翻译并经人工校对,技术术语已对齐。如有不准确之处,欢迎指出。"
+
+Same tone rule as Step 3: translator, not promoter.
+
+**Chapters.** Read through the translated SRT and find the natural topic boundaries — where the speaker moves to a new command, a new section, a new demo. Emit each as `MM:SS 章节名`, in the **comment format for the target platform**, because Bilibili and YouTube parse chapters from pinned-comment timestamps that users can click to jump:
+
+```
+00:00 开场:为什么做这个
+00:32 安装配置
+03:44 ask-matt 演示
+...
+```
+
+Use the timestamp of the first cue at each boundary (pull it from the SRT). Chapter names are short noun phrases, not sentences. Aim for 5-12 chapters for a 15-20 minute video — too few is useless, too many is noise.
+
+Done when `<name>.upload.md` exists with a title, a description, and a chapter list whose timestamps all fall within the video's duration.
 
 ## Platform notes (only if the user asks about uploading)
 

@@ -6,9 +6,12 @@ Commands:
     python subtitles.py biliteral  <en.srt> <zh.srt> <out_bilingual.srt>
         Merge two same-timeline SRTs (zh on top, en below) into one bilingual SRT.
 
-    python subtitles.py ass         <bilingual.srt> <out.ass>
+    python subtitles.py ass         <bilingual.srt> <out.ass> [--bottom-bar PX]
         Convert a bilingual SRT (zh line + en line) into a styled ASS for
-        hard-burning. Chinese larger on top, English smaller below.
+        hard-burning. Chinese larger on top, English smaller below. With
+        --bottom-bar PX, grow the ASS play resolution by PX and place subtitles
+        inside a black strip padded below the picture (no image overlap); the
+        ffmpeg burn command must pad the frame to match.
 
     python subtitles.py split       <bilingual.srt> <out_zh.srt> <out_en.srt>
         Split a bilingual SRT back into two pure-language SRTs.
@@ -95,18 +98,44 @@ def cmd_biliteral(args):
 
 # ---------- ass: bilingual SRT -> styled ASS ----------
 
-ASS_HEADER = """[Script Info]
+# Layout constants (ASS script coordinates, assuming a 1920x1080 source frame).
+PLAY_RES_X = 1920
+PLAY_RES_Y = 1080
+
+# In-bar mode the subtitle sits inside the padded bottom bar, so its
+# vertical margin is measured from the bottom of the bar. Without a bar
+# the margin is measured from the bottom of the picture itself.
+ZH_MARGINV_OVERLAY = 70   # zh baseline above bottom edge (overlay mode)
+EN_MARGINV_OVERLAY = 130  # en baseline above bottom edge (overlay mode)
+ZH_MARGINV_BAR = 110      # zh baseline above the bar's bottom edge
+EN_MARGINV_BAR = 50       # en baseline above the bar's bottom edge
+
+
+def ass_header(bottom_bar: int = 0) -> str:
+    """Build the ASS [Script Info] + [V4+ Styles] header.
+
+    bottom_bar=0 (default): overlay mode — subtitles render over the picture,
+    PlayResY stays 1080. bottom_bar>0: the bar's height is added to PlayResY
+    so the subtitle coordinate system extends into the bar; ffmpeg then pads
+    the frame with a black strip of that height before burning the ASS.
+    """
+    res_y = PLAY_RES_Y + bottom_bar
+    if bottom_bar > 0:
+        zh_v, en_v = ZH_MARGINV_BAR, EN_MARGINV_BAR
+    else:
+        zh_v, en_v = ZH_MARGINV_OVERLAY, EN_MARGINV_OVERLAY
+    return f"""[Script Info]
 Title: Bilingual ZH-EN
 ScriptType: v4.00+
 WrapStyle: 0
 ScaledBorderAndShadow: yes
-PlayResX: 1920
-PlayResY: 1080
+PlayResY: {res_y}
+PlayResX: {PLAY_RES_X}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ZH,Microsoft YaHei,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,60,60,70,1
-Style: EN,Arial,44,&H00E0E0E0,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,60,60,130,1
+Style: ZH,Microsoft YaHei,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,60,60,{zh_v},1
+Style: EN,Arial,44,&H00E0E0E0,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,60,60,{en_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -116,7 +145,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 def ass_ts(ts: float) -> str:
     """float seconds -> ASS timestamp H:MM:SS.CS."""
     h = int(ts // 3600)
-    m = int((ts % 3600) // 60)
+    m = int(ts % 3600) // 60
     s = ts % 60
     return f"{h:d}:{m:02d}:{int(s):02d}.{int(round((s - int(s)) * 100)):02d}"
 
@@ -130,9 +159,15 @@ def cmd_ass(args):
         events.append(f"Dialogue: 0,{s},{e},ZH,,0,0,0,,{zh}")
         events.append(f"Dialogue: 0,{s},{e},EN,,0,0,0,,{en}")
     with open(args.output, "w", encoding="utf-8") as f:
-        f.write(ASS_HEADER)
+        f.write(ass_header(args.bottom_bar))
         f.write("\n".join(events))
     print(f"[ass] {len(events)//2} cues (x2 layers) -> {args.output}")
+    if args.bottom_bar > 0:
+        print(
+            f"[ass] bottom-bar mode: PlayResY={PLAY_RES_Y + args.bottom_bar}. "
+            f"Pad the frame with `pad=iw:ih+{args.bottom_bar}:black` before burning.",
+            file=sys.stderr,
+        )
 
 
 # ---------- split: bilingual SRT -> two pure-language ----------
@@ -227,6 +262,17 @@ def main():
     p = sub.add_parser("ass")
     p.add_argument("input")
     p.add_argument("output")
+    p.add_argument(
+        "--bottom-bar",
+        type=int,
+        default=0,
+        metavar="PX",
+        help="Pad a black bar of this many pixels below the picture and put the "
+        "subtitles inside it (no overlap with the image). Default 0 = overlay "
+        "subtitles onto the picture as before. When set, the ASS PlayResY grows "
+        "by this many pixels and you must pad the frame with ffmpeg before burning "
+        "(see SKILL.md Step 5).",
+    )
     p.set_defaults(func=cmd_ass)
 
     p = sub.add_parser("split")
