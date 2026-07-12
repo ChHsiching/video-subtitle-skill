@@ -22,6 +22,41 @@ For single-language (`zh` or `en`), produce that language's SRT + the cooked MP4
 
 Produce everything by default. More outputs = more choices for the user at upload time. Only skip a step if the user explicitly says they don't want a specific output.
 
+## Where the outputs land — one folder per stage
+
+Every video's outputs go into a **per-video subdirectory**, and inside it the files are split into folders named after the pipeline stage that produces them. The folder names are self-describing — no numbers, no needing to remember an order.
+
+Ask where the user wants the per-video directory before Step 1 — default is `<cwd>/<author>/<video-name>/` (e.g. `tony/linux-mint-2026/`), one level under a folder named after the source author. All output paths below are relative to that per-video directory.
+
+```
+<video-name>/
+├── raw/            the source video (download or user-provided)
+│   └── raw.mp4
+├── transcript/     Step 1–2: audio + English transcript
+│   ├── <name>.audio.wav
+│   └── <name>.en.srt
+├── subtitle/       Step 3–4: Chinese translation + bilingual merge
+│   ├── <name>.zh.srt
+│   ├── <name>.bilingual.srt
+│   └── <name>.bilingual.ass
+├── cooked/         Step 5–6: burned video + upload metadata
+│   ├── <name>.cooked.mp4
+│   └── <name>.upload.md
+├── cloud-srt/      soft-subtitle files (split, length-safe) — produced on request or for platform upload
+│   ├── <name>.zh-cloud.srt
+│   └── <name>.en-cloud.srt
+└── scripts/        any helper scripts you write for this run (e.g. a custom merge) — kept with the run that produced them
+```
+
+Rules:
+
+- **`<name>` is the same stem across all files in the run** — e.g. `linux-mint` everywhere, not `linux-mint.en.srt` but `linuxmint.cooked.mp4`. The user names it; reuse it.
+- **Each stage folder holds only that stage's outputs.** Don't put the cooked MP4 next to the raw. If you find yourself cross-referencing a file from another stage, copy it in rather than reach across — the folders are the unit of "is this step done."
+- **`cloud-srt/` is produced lazily** — only when the user asks for soft subtitles (e.g. Bilibili cloud subtitle upload). It's not part of the default burn pipeline; it's the platform-notes path.
+- If a video has extra assets (screenshots for an article, a write-up), give them their own descriptive folder (`screenshots/`, `writeup/`) — don't pollute the stage folders.
+
+The completion criterion for layout: at the end of a run, `find <video-name>/ -type f` shows every file inside a named stage folder, nothing loose in the per-video root.
+
 ## Environment reuse — never reinstall blindly
 
 Before touching the pipeline, check what's already on disk. The goal is to skip work that's already done.
