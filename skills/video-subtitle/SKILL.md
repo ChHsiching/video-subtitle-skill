@@ -17,6 +17,7 @@ By default, for a bilingual run, all of these:
 4. `<name>.bilingual.ass` — styled ASS for hard-burning
 5. `<name>.cooked.mp4` — video with subtitles burned into the frame
 6. `<name>.upload.md` — title, description, and chapter timestamps for uploading (Step 6)
+7. `README.md` — the index for this video's directory: what each subfolder holds, where to find each artifact, the processing log (Step 7)
 
 For single-language (`zh` or `en`), produce that language's SRT + the cooked MP4 + the upload.md.
 
@@ -30,6 +31,7 @@ Ask where the user wants the per-video directory before Step 1 — default is `<
 
 ```
 <video-name>/
+├── README.md        ← the index for this video (see below) — always present
 ├── raw/            the source video (download or user-provided)
 │   └── raw.mp4
 ├── transcript/     Step 1–2: audio + English transcript
@@ -55,7 +57,22 @@ Rules:
 - **`cloud-srt/` is produced lazily** — only when the user asks for soft subtitles (e.g. Bilibili cloud subtitle upload). It's not part of the default burn pipeline; it's the platform-notes path.
 - If a video has extra assets (screenshots for an article, a write-up), give them their own descriptive folder (`screenshots/`, `writeup/`) — don't pollute the stage folders.
 
-The completion criterion for layout: at the end of a run, `find <video-name>/ -type f` shows every file inside a named stage folder, nothing loose in the per-video root.
+### The README.md — required, not optional
+
+The per-video directory **must** contain a `README.md` at its root. It is the index: someone (including you, months later) opens the folder and immediately knows what each subdirectory holds and where to find each artifact. Without it, the stage-folder names are guesswork.
+
+The folder names alone don't carry enough meaning — `transcript/` could be the English transcript or the Chinese one or both; `subtitle/` could be the soft-srt or the burned ASS; `cooked/` doesn't say whether the upload.md is in there. The README resolves all of that in one place.
+
+Write it as the final step of the run, after every artifact exists. It must contain:
+
+- **Header**: source author, original URL, duration, resolution, processing date.
+- **An index table** — one row per subdirectory, columns `去哪找 | 目录 | 里面是什么`. This is the lookup the folder names can't provide on their own. Use the user's language (Chinese if the run is Chinese-facing).
+- **An artifacts-by-purpose list** — group the actual files by what the user will do with them: "直接发 B 站" (cooked mp4 + upload.md), "传 B 站云字幕" (the cloud-srt files, with the don't-double-up warning), "存档/二次加工" (raw + per-language srts + ass). This is more useful than a flat file list because it answers "I want to do X, which file?"
+- **Processing log**: transcription engine + model, who translated (you), ASR errors you fixed while translating, burn settings, and the verification checks you ran (duration match, subtitle-render spot-check). This is the provenance record — if something looks off later, it tells you how it was made.
+
+The README's own completion criterion: a reader who has never seen this run can, in under 30 seconds, point to the file they need for any given purpose.
+
+The overall layout criterion: at the end of a run, `find <video-name>/ -type f` shows `README.md` plus every other file inside a named stage folder, nothing loose in the per-video root.
 
 ## Environment reuse — never reinstall blindly
 
@@ -188,6 +205,12 @@ Same tone rule as Step 3: translator, not promoter.
 Use the timestamp of the first cue at each boundary (pull it from the SRT). Chapter names are short noun phrases, not sentences. Aim for 5-12 chapters for a 15-20 minute video — too few is useless, too many is noise.
 
 Done when `<name>.upload.md` exists with a title, a description, and a chapter list whose timestamps all fall within the video's duration.
+
+### Step 7 — Write the per-video README
+
+The very last step: write `README.md` at the root of the per-video directory, per the spec in the "The README.md — required, not optional" subsection above. Do this after every other artifact exists, so the index reflects what's actually on disk.
+
+Done when `README.md` exists at the per-video root, with the header, the index table, the artifacts-by-purpose list, and the processing log. Verify by reading it cold: can you find any given artifact from it alone? If not, the index isn't doing its job — fix it.
 
 ## Platform notes (only if the user asks about uploading)
 
