@@ -206,19 +206,31 @@ def split_en(text):
 
 
 def pack(parts, limit):
-    """Greedily pack fragments into chunks under `limit` chars."""
+    """Greedily pack fragments into chunks under `limit` chars.
+
+    Word-boundary safe: never splits a word mid-character. If a fragment is
+    longer than the limit, it's broken at the last space before the limit;
+    only a single word longer than the limit itself is hard-cut (rare, and
+    usually a URL or command that can't break)."""
     chunks, buf = [], ""
     for p in parts:
-        cand = buf + p
+        cand = (buf + " " + p) if buf else p
         if len(cand) <= limit:
             buf = cand
-        else:
-            if buf:
-                chunks.append(buf)
-            while len(p) > limit:
-                chunks.append(p[:limit])
-                p = p[limit:]
-            buf = p
+            continue
+        # cand overflows: flush buf, then handle p alone
+        if buf:
+            chunks.append(buf)
+            buf = ""
+        # break p at word boundaries until what remains fits the limit
+        while len(p) > limit:
+            # find last space within the limit; if none (one giant word), hard-cut
+            cut = p.rfind(" ", 0, limit)
+            if cut <= 0:
+                cut = limit  # single word longer than limit, no choice
+            chunks.append(p[:cut])
+            p = p[cut:].lstrip()
+        buf = p
     if buf:
         chunks.append(buf)
     return [c.strip() for c in chunks if c.strip()]
