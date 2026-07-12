@@ -115,15 +115,25 @@ Done when `input.en.srt` exists with one segment per cue. Tell the user this ste
 
 This is the step that makes the quality. You — the agent running this skill — translate the English SRT into Chinese yourself. You have the full transcript, you understand context, and you'll catch ASR errors that the transcription model made.
 
-**Read the English SRT, then write the Chinese SRT cue-for-cue**, keeping the exact same index and timestamps, changing only the text. Rules:
+The English SRT is your **source of meaning and timing**, not a rigid grid to fill cell-by-cell. whisperX cuts on speech pauses, which often splits one sentence across 2-3 cues or merges two sentences into one. Your Chinese cues must follow **Chinese sentence boundaries**, not the English cue boundaries. A viewer reads the Chinese — if it's chopped into word-fragments to match English pauses, it's unreadable.
 
+**The core principle: translate as a human would.** Read the English transcript, understand what's being said, and write Chinese that reads naturally. Then lay those Chinese sentences onto the timeline so each appears while its English is spoken. Specifically:
+
+- **One Chinese cue = one complete thought / clause.** If English split one sentence across cues 12-13-14, the Chinese for that sentence goes on whichever cue best fits (usually the longest, or split across them at a natural Chinese pause — not at the English word boundary). Never produce a Chinese cue that's a fragment like "惯例" or "的" or "pfetch" alone.
+- **Never fragment Chinese to mirror English fragmentation.** If matching the English cue grid would leave you with a ≤2-character Chinese line, that line is wrong — merge it into the neighbour. The English stays long on screen; the Chinese condenses the same meaning into a clean short line.
 - **Fix ASR errors while you translate.** Proper nouns, technical terms, and commands are routinely mis-transcribed (e.g. "matpocock" → "mattpocock", "SimLink" → "symlink", "Claw Code" → "Claude Code"). The agent has context the transcription model didn't — use it.
 - **Keep technical terms in English where Chinese devs would.** Don't translate "skills", "agent", "token", "context window", "CLI" etc. into Chinese — that's how the audience reads them.
-- **One cue, one sentence.** Never let a Chinese cue run multiple sentences joined only by commas. If the English cue is long, break the Chinese into a clean short sentence. This is the failure mode you must avoid: a single 100+ character cue that Bilibili rejects.
-- **Chinese cue length ≤ 42 characters.** Hard limit. Bilibili cloud subtitles reject cues past ~45 Chinese characters. If a translation would exceed it, you've mis-segmented — translate into a shorter sentence, or flag the English cue for splitting first.
-- **Tone: faithful, not marketing.** Translate what's said. Don't add emoji, don't punch up "神级/必看", don't editorialize. The cooked video should sound like the original speaker, in Chinese.
+- **Chinese cue length ≤ 42 characters.** Hard limit (Bilibili). But the floor matters just as much: no cue should be a bare word or punctuation. If you can't fill a cue with at least a short complete phrase, the cue shouldn't exist as a standalone — fold it in.
+- **Tone: faithful, not marketing.** Translate what's said. Don't add emoji, don't punch up "神级/必看", don't editorialize.
 
-Done when `<name>.zh.srt` exists, has the same cue count and timestamps as `<name>.en.srt`, and every Chinese cue is ≤ 42 characters.
+**Self-review before moving on (mandatory).** Read your zh.srt top to bottom as if you were a viewer. Flag and fix any cue that:
+- is ≤ 2 Chinese characters (a fragment),
+- doesn't end on a natural boundary (mid-word, mid-clause),
+- or reads as a sentence broken across cues in a way no speaker would pause.
+
+This review catches the failure mode where mechanical English-grid alignment produces word-soup. A run is not done until you've read every Chinese cue cold and it reads as coherent sentences.
+
+Done when `<name>.zh.srt` exists, has the same cue count and timestamps as `<name>.en.srt`, every Chinese cue is ≤ 42 characters, and the self-review above passed.
 
 ### Step 4 — Shorten, then merge into bilingual SRT + ASS
 
