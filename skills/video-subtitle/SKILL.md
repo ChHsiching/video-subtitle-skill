@@ -125,14 +125,41 @@ This is the step that makes the quality. You — the agent running this skill �
 
 Done when `<name>.zh.srt` exists, has the same cue count and timestamps as `<name>.en.srt`, and every Chinese cue is ≤ 42 characters.
 
-### Step 4 — Merge into bilingual SRT + ASS
+### Step 4 — Shorten, then merge into bilingual SRT + ASS
+
+**Shorten first, always — for the burned video too, not just cloud subtitles.** whisperX regularly emits cues spanning several sentences (one cue, 100+ characters), and the translator may split long cues further. If you merge those raw, the burned video gets multi-line walls of text. So before merging, run `shorten` on each language to split long cues at sentence punctuation and redistribute timestamps:
 
 ```bash
-python <skill>/scripts/subtitles.py biliteral input.en.srt input.zh.srt input.bilingual.srt
+python <skill>/scripts/subtitles.py shorten input.en.srt input.en.short.srt --lang en
+python <skill>/scripts/subtitles.py shorten input.zh.srt input.zh.short.srt --lang zh
+```
+
+Defaults are zh ≤ 42 chars, en ≤ 90. These are the same limits the cloud-srt path uses; apply them here so the burned video and the soft subtitles are consistent.
+
+**Then merge short cues back together (the step shorten misses).** Char-based shorten splits words mid-character and leaves fragments: orphan punctuation (`。`, `s.`), single-letter tails (`t.`, `d.`), and sub-second cues (0.05s — a flash no one can read). These make the burned video flicker and the cloud upload look broken. After shortening, merge any cue shorter than a minimum duration into its neighbour, and absorb punctuation-only cues. A reference `merge_short.py` for this lives in the per-video `scripts/` folder — write one if it's not there. Run it on **both** en and zh (they share timestamps, so the same merges apply and they stay 1:1):
+
+```bash
+python <skill>/scripts/merge_short.py input.en.short.srt input.en.merged.srt 1.2
+python <skill>/scripts/merge_short.py input.zh.short.srt input.zh.merged.srt 1.2
+```
+
+`1.2` is the minimum cue duration in seconds — the broadcast-subtitle floor (viewers need ~1s to read a line). After merging, verify: no cue under 1.0s, no punctuation-only cue, no cue whose text is a single character. The merged files become your en.srt / zh.srt for the rest of the pipeline. If merging produces a cue over the char limit (zh > 42), trim that cue's wording — don't split it back into a flash.
+
+**Then merge the two shortened files.** If they have the same cue count and aligned timestamps (translator kept 1:1), use `biliteral`:
+
+```bash
+python <skill>/scripts/subtitles.py biliteral input.en.short.srt input.zh.short.srt input.bilingual.srt
+```
+
+If the cue counts differ (the translator split some cues), `biliteral` will warn about a mismatch and pair by min-count — that drops cues. Instead merge by timestamp overlap, which handles differing granularity without joining sentences. A small merge helper for this lives in the per-video `scripts/` folder; write one if it's not there (union of all cue boundaries, emit per-interval, coalesce identical consecutive text, never concatenate cue texts into one line).
+
+Then generate the ASS from the merged bilingual SRT:
+
+```bash
 python <skill>/scripts/subtitles.py ass input.bilingual.srt input.bilingual.ass
 ```
 
-If the user only wants single-language output, skip this step.
+If the user only wants single-language output, skip the merge — but still shorten the single language before burning.
 
 **Subtitle placement — ask the user which they want.** Two modes, producing different ASS files:
 
@@ -147,7 +174,7 @@ If the user only wants single-language output, skip this step.
 
 Don't generate both unless the user asks — pick one and use it.
 
-Done when the chosen ASS exists. Verify the biliteral step reported no cue-count mismatch — if it did, the zh and en SRTs drifted out of sync; fix the translation before continuing.
+Done when the chosen ASS exists **and** every cue in the merged bilingual SRT is within length limits (verify: max zh line ≤ 42, max en line ≤ 90). If any cue is over, the shorten didn't propagate — go back and shorten the source before merging.
 
 ### Step 5 — Burn subtitles into video
 
