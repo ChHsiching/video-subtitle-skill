@@ -121,19 +121,20 @@ The English SRT is your **source of meaning and timing**, not a rigid grid to fi
 
 - **One Chinese cue = one complete thought / clause.** If English split one sentence across cues 12-13-14, the Chinese for that sentence goes on whichever cue best fits (usually the longest, or split across them at a natural Chinese pause — not at the English word boundary). Never produce a Chinese cue that's a fragment like "惯例" or "的" or "pfetch" alone.
 - **Never fragment Chinese to mirror English fragmentation.** If matching the English cue grid would leave you with a ≤2-character Chinese line, that line is wrong — merge it into the neighbour. The English stays long on screen; the Chinese condenses the same meaning into a clean short line.
-- **Fix ASR errors while you translate.** Proper nouns, technical terms, and commands are routinely mis-transcribed (e.g. "matpocock" → "mattpocock", "SimLink" → "symlink", "Claw Code" → "Claude Code"). The agent has context the transcription model didn't — use it.
+- **Commands, keyboard shortcuts, file paths, and proper nouns are atomic — never split them across cues.** whisperX often cuts mid-utterance: "open our ZSH" / "rc and there you go" or "hit control" / "S to save". You MUST reassemble these in translation: `.zshrc` stays whole on one cue, `Ctrl+S` stays whole, `source .zshrc` stays whole. The cue boundary is not an excuse to break a command in half. When you spot a cue ending in `ZSH`, `control`, `Esc`, `cd`, etc. with the rest of the term in the next cue, merge them — move the whole term to whichever cue has room, adjust the other cue's wording to stay coherent. This is the single most embarrassing failure mode: a viewer sees "ZSH" then "rc" on two lines and knows the translator wasn't paying attention.
+- **Fix ASR errors while you translate.** Proper nouns, technical terms, and commands are routinely mis-transcribed (e.g. "matpocock" → "mattpocock", "SimLink" → "symlink", "Claw Code" → "Claude Code", "matzilla" → ".mozilla", "scrub menu" → "GRUB menu"). The agent has context the transcription model didn't — use it. If a word sounds like a known command/term but is spelled weird in the transcript, it's a transcription error; write the correct form.
 - **Keep technical terms in English where Chinese devs would.** Don't translate "skills", "agent", "token", "context window", "CLI" etc. into Chinese — that's how the audience reads them.
 - **Chinese cue length ≤ 42 characters.** Hard limit (Bilibili). But the floor matters just as much: no cue should be a bare word or punctuation. If you can't fill a cue with at least a short complete phrase, the cue shouldn't exist as a standalone — fold it in.
 - **Tone: faithful, not marketing.** Translate what's said. Don't add emoji, don't punch up "神级/必看", don't editorialize.
 
-**Self-review before moving on (mandatory).** Read your zh.srt top to bottom as if you were a viewer. Flag and fix any cue that:
-- is ≤ 2 Chinese characters (a fragment),
-- doesn't end on a natural boundary (mid-word, mid-clause),
-- or reads as a sentence broken across cues in a way no speaker would pause.
+**Self-review — two passes, mandatory, not optional.** This is where the quality lives. Translating cell-by-cell always produces fragmentation you can't see while writing it. You must read the finished zh.srt cold, as a viewer would, twice:
 
-This review catches the failure mode where mechanical English-grid alignment produces word-soup. A run is not done until you've read every Chinese cue cold and it reads as coherent sentences.
+- **Pass 1 — read every cue as a sentence.** Does it read like something a person would say? Fix any cue that is ≤ 2 characters, ends mid-word/mid-clause, or is a sentence broken across cues at a point no speaker would pause. Read each cue together with the one before and after — a cue that looks fine alone may be a fragment in context.
+- **Pass 2 — scan cue boundaries for split atoms.** Look at every place where one cue ends and the next begins. If the boundary falls inside a command (`.zshrc`, `source`), a shortcut (`Ctrl+S`, `Alt+F4`, `Super+D`), a file path, or a proper noun (Gruvbox, VSCodium, pfetch), that's a bug — reassemble the whole term onto one cue. This pass exists specifically because these splits are invisible when you read each cue in isolation but jump out immediately when you scan boundaries.
 
-Done when `<name>.zh.srt` exists, has the same cue count and timestamps as `<name>.en.srt`, every Chinese cue is ≤ 42 characters, and the self-review above passed.
+A run is not done until both passes are complete. If you find one split command, assume there are more — keep scanning until the boundary list is clean. The test: could a viewer screenshot any single cue and have it make sense on its own? If not, fix it.
+
+Done when `<name>.zh.srt` exists, has the same cue count and timestamps as `<name>.en.srt`, every Chinese cue is ≤ 42 characters, and both review passes above passed.
 
 ### Step 4 — Shorten, then merge into bilingual SRT + ASS
 
