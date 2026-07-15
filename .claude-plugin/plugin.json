@@ -1,5 +1,6 @@
 {
   "name": "video-subtitle-skill",
+  "version": "2.0.0",
   "skills": [
     "./skills/video-subtitle"
   ]

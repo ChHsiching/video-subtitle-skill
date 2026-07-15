@@ -5,7 +5,9 @@ description: Turn a foreign-language raw video into a bilingual (or single-langu
 
 Turn a **raw** video (foreign audio, no subtitles) into a **cooked** video with bilingual or single-language subtitles. The agent does the translation itself — no external translation API.
 
-The skill ships two scripts in its own `scripts/` folder: `transcribe.py` (whisperX → SRT) and `subtitles.py` (merge / ASS / split / shorten). They live **inside this skill folder** — not in the user's project. Before calling them, resolve their absolute path. If this skill is installed at `.agents/skills/video-subtitle/`, the scripts are at `.agents/skills/video-subtitle/scripts/`. Use the absolute path when invoking, since the user's video may be anywhere on disk.
+The skill ships three scripts in its own `scripts/` folder: `transcribe.py` (whisperX → SRT), `subtitles.py` (merge / ASS / split / shorten), and `merge_short.py` (fix shorten fragmentation). They live **inside this skill folder** — not in the user's project. Before calling them, resolve their absolute path. If this skill is installed at `.agents/skills/video-subtitle/`, the scripts are at `.agents/skills/video-subtitle/scripts/`. Use the absolute path when invoking, since the user's video may be anywhere on disk.
+
+**All SRT output must have no BOM and no empty cues.** BOM causes Bilibili to reject the file ("格式不正确"), and empty cues (timestamp with no text) also cause rejection. The scripts handle this automatically.
 
 ## What you produce
 
@@ -84,8 +86,42 @@ Before touching the pipeline, check what's already on disk. The goal is to skip 
    Run `python -c "import whisperx"` against each candidate. Use the first one that imports cleanly. Only if none found, create one and install `whisperx` (this is heavy — torch alone is ~2GB — so reuse aggressively).
 2. **Models**: whisperX downloads models to `~/.cache/huggingface/hub/` (the `medium` model is ~1.5GB) and the wav2vec2 alignment model to `~/.cache/torch/hub/`. These persist across runs. If a model is already cached, the transcribe step skips the download — don't pre-download anything yourself.
 3. **ffmpeg**: required for audio extraction and subtitle burning. Run `ffmpeg -version`; if missing, tell the user to install it (don't try to install it yourself on Windows).
+4. **yt-dlp**: required for downloading videos and thumbnails from YouTube. Check `python -c "import yt_dlp"`. If missing, install with `pip install yt-dlp`. YouTube requires cookies for authentication — use `--cookies-from-browser firefox` (or chrome). YouTube also requires a JS runtime for challenge solving — use `--js-runtimes node --remote-components ejs:github`.
 
 The completion criterion for this step: you can name the exact `python` path you'll use for transcription, and ffmpeg is on PATH. Don't proceed to transcription until both are confirmed.
+
+### GPU detection — determines compute_type
+
+Run `python -c "import torch; print(torch.cuda.is_available())"`. This decides the transcription compute_type:
+
+- **CUDA available (NVIDIA GPU)**: use `compute_type=float16` — much faster, same accuracy.
+- **No CUDA (CPU only, including AMD GPUs)**: use `compute_type=float32` — most accurate on CPU. **Do NOT use float16 on CPU** — it will crash with `ValueError: Requested float16 compute type, but the target device or backend do not support efficient float16 computation`. Do NOT use `int8` — it quantizes and loses accuracy (e.g. "How we doing" → "How are we doing").
+
+AMD GPUs (e.g. RX 6750 XT) are NOT usable by PyTorch/CUDA on Windows. If the machine has only an AMD GPU or integrated graphics, treat it as CPU-only.
+
+## Execution strategy — running long tasks without timeout
+
+Background Bash tasks in some environments have a ~10 minute timeout. whisperX transcription and ffmpeg encoding can both exceed this for long videos. **Do not use chunking or segmentation to work around the timeout** — that destroys transcription quality (sentences cut at chunk boundaries) and creates ASS timestamp alignment bugs in burned video.
+
+Instead, **launch the process detached** so it survives the timeout:
+
+**Windows** (use `start /b`):
+```bat
+@echo off
+cd /d "<project-dir>"
+"<python>" "<skill>/scripts/transcribe.py" "<input.wav>" "<output.srt>" large-v3 float32 >> "<log>" 2>&1
+echo DONE >> "<log>"
+```
+Launch with: `cmd.exe /c "start /b /min <wrapper.bat>"`
+
+The Bash call that launches it returns immediately. The detached process keeps running. Monitor by checking the log file or `tasklist /FI "IMAGENAME eq python.exe"`.
+
+**Linux/macOS** (use `nohup`):
+```bash
+nohup python <skill>/scripts/transcribe.py <input.wav> <output.srt> large-v3 float32 > <log> 2>&1 &
+```
+
+Verify the process survives past the timeout before relying on it: write a heartbeat test (a script that appends to a file every 30s for 15 min), launch it detached, and check it's still alive after 10 minutes.
 
 ## The pipeline
 
@@ -102,12 +138,16 @@ Done when `input.wav` exists and is non-empty.
 ### Step 2 — Transcribe (whisperX, the slow step)
 
 ```bash
-python <skill>/scripts/transcribe.py input.wav input.en.srt medium
+python <skill>/scripts/transcribe.py input.wav input.en.srt [model_size] [compute_type]
 ```
 
 `<skill>` is this skill's folder (wherever it's installed — `.agents/skills/video-subtitle` or `.claude/skills/video-subtitle`). Use the absolute path.
 
-Use `medium` unless the user asks for a different size. On CPU this runs at roughly 2x realtime — a 17-minute video takes ~6-8 minutes. Models download on first run only.
+**Model**: default `large-v3` (most accurate, ~3GB). Use `medium` only if the user asks for speed over accuracy. On CPU with `float32`, large-v3 runs at roughly 0.5–0.7x realtime — a 17-minute video takes ~25-35 min, a 107-minute video takes ~50-60 min. Models download on first run only.
+
+**compute_type**: default `float32` (CPU, no quantization). If CUDA is available (see GPU detection above), pass `float16` for a major speedup. **Never use `int8`** — it quantizes and loses accuracy. **Never use `float16` on CPU** — it crashes.
+
+**Never chunk the audio.** Process the entire audio file in one call. whisperX internally uses 30-second sliding windows — chunking at boundaries breaks sentences and makes subtitles not match speech. If the task times out, use the detached execution strategy above, not chunking.
 
 Done when `input.en.srt` exists with one segment per cue. Tell the user this step is slow and they should expect to wait.
 
@@ -124,6 +164,7 @@ The English SRT is your **source of meaning and timing**, not a rigid grid to fi
 - **Commands, keyboard shortcuts, file paths, and proper nouns are atomic — never split them across cues.** whisperX often cuts mid-utterance: "open our ZSH" / "rc and there you go" or "hit control" / "S to save". You MUST reassemble these in translation: `.zshrc` stays whole on one cue, `Ctrl+S` stays whole, `source .zshrc` stays whole. The cue boundary is not an excuse to break a command in half. When you spot a cue ending in `ZSH`, `control`, `Esc`, `cd`, etc. with the rest of the term in the next cue, merge them — move the whole term to whichever cue has room, adjust the other cue's wording to stay coherent. This is the single most embarrassing failure mode: a viewer sees "ZSH" then "rc" on two lines and knows the translator wasn't paying attention.
 - **Fix ASR errors while you translate.** Proper nouns, technical terms, and commands are routinely mis-transcribed (e.g. "matpocock" → "mattpocock", "SimLink" → "symlink", "Claw Code" → "Claude Code", "matzilla" → ".mozilla", "scrub menu" → "GRUB menu"). The agent has context the transcription model didn't — use it. If a word sounds like a known command/term but is spelled weird in the transcript, it's a transcription error; write the correct form.
 - **Keep technical terms in English where Chinese devs would.** Don't translate "skills", "agent", "token", "context window", "CLI" etc. into Chinese — that's how the audience reads them.
+- **Translate technical concepts naturally, not literally.** "observability platform" → "监控平台" (not "可观测性平台" which sounds unnatural in Chinese). "to-do app" → "待办应用". When a concept has a common Chinese name, use it. When it doesn't, keep the English term.
 - **Chinese cue length ≤ 42 characters.** Hard limit (Bilibili). But the floor matters just as much: no cue should be a bare word or punctuation. If you can't fill a cue with at least a short complete phrase, the cue shouldn't exist as a standalone — fold it in.
 - **Tone: faithful, not marketing.** Translate what's said. Don't add emoji, don't punch up "神级/必看", don't editorialize.
 
@@ -194,13 +235,13 @@ Hard-burn with libass. Use the command that matches the placement chosen in Step
 **Overlay** (default):
 
 ```bash
-ffmpeg -y -i "input.mp4" -vf "ass=input.bilingual.ass" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a copy -movflags +faststart "input.cooked.mp4"
+ffmpeg -y -i "input.mp4" -vf "ass=input.bilingual.ass" -c:v libx264 -preset faster -crf 20 -pix_fmt yuv420p -c:a copy -movflags +faststart "input.cooked.mp4"
 ```
 
 **Bottom-bar** (only with `--bottom-bar PX` in Step 4 — pad a black strip below the frame first, then burn the ASS whose play resolution already accounts for the bar):
 
 ```bash
-ffmpeg -y -i "input.mp4" -vf "pad=iw:ih+PX:color=black,ass=input.bilingual.bar.ass" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a copy -movflags +faststart "input.cooked.bar.mp4"
+ffmpeg -y -i "input.mp4" -vf "pad=iw:ih+PX:color=black,ass=input.bilingual.bar.ass" -c:v libx264 -preset faster -crf 20 -pix_fmt yuv420p -c:a copy -movflags +faststart "input.cooked.bar.mp4"
 ```
 
 `PX` is the same value passed to `--bottom-bar`. Filters run left-to-right: `pad` grows the frame, `ass` renders into the grown area. Output height becomes `source_height + PX`.
@@ -210,7 +251,7 @@ Two gotchas we hit and you will too:
 - **Windows paths with `C:` break the ass filter** — the filter parses `:` as an option separator. Run ffmpeg from the directory containing the ASS and pass a **relative** filename (`ass=input.bilingual.ass`), never an absolute `C:\...` path.
 - **ASS timestamps need zero-padded minutes** (`0:00:06.07`, not `0:0:6.7`). The `ass` subcommand handles this; if you hand-write ASS, mind the format.
 
-Re-encoding a 17-minute 1080p60 video takes ~5-10 minutes on this machine. Tell the user to expect the wait.
+Re-encoding a 17-minute 1080p video takes ~3-5 minutes with `preset faster`. A 100+ minute video takes ~15-20 minutes. For long videos, use the detached execution strategy to avoid timeout. **Never use segmented/chunked encoding** — it creates ASS timestamp misalignment and concat issues. Burn the full video in one pass.
 
 Done when `input.cooked.mp4` exists, plays, and a spot-check frame at a speaking timestamp shows subtitles rendered (the cue for that timestamp is visible). To verify without eyeballing: extract a frame and check the bottom strip has bright (white) pixels above ~2% density — that's the subtitle text. In bottom-bar mode also confirm the image region itself is untouched.
 
@@ -220,29 +261,41 @@ The user is going to post this somewhere. Give them a ready-to-paste title, desc
 
 This is authoring work, like Step 3. You — the agent — write it from the transcript. No script.
 
-**Title.** One line, faithful to what the video is about. Pull the hook from the source if there is one (e.g. "16万Star的仓库,却没有教程" mirrors the original's "...and no tutorial"). Keep it under 30 Chinese characters; don't add clickbait ("神级/必看/震惊"). If the original author has their own framing, mirror it rather than invent your own.
+**No Markdown formatting in the actual description text.** Platforms like Bilibili don't render Markdown — `**bold**` shows as literal asterisks. Use plain text with line breaks. The upload.md file itself can use Markdown headings to organize sections, but the copy-paste content must be plain text.
 
-**Description.** The translated summary of what the video covers, plus the provenance the user will need at upload time:
+**Titles — provide multiple, per platform.** Different platforms need different styles. Provide at least:
 
-- What the video is, in 2-3 sentences, translated from the source's own framing (don't editorialize)
-- Key points / commands / timestamps, as a short list — these are the terms people will search for
-- Source attribution: author handle, original link, install command (`npx skills add ...`) if it's a skills repo
-- One line: "中英双语字幕,AI 辅助转录 + 翻译并经人工校对,技术术语已对齐。如有不准确之处,欢迎指出。"
+- **B站**: professional, shows what the video is about. Can be up to ~30 chars. Include the author's identity (e.g. repo name) if it's recognizable.
+- **小红书**: ≤20 characters. Same professional tone as B站, just shorter. Don't use marketing/clickbait language ("大佬带你", "效率翻倍").
+- **YouTube**: can include "(双语字幕)" or English title variant.
+
+The title should tell the viewer **what happens in the video** (e.g. "从零搭建一个全新项目"), not use jargon they'd need the description to understand (e.g. don't put "Agent可观测性平台" in the title — that's for the description).
+
+**Description — provide two versions:**
+
+1. **Full version (B站/YouTube)**: 3-4 paragraphs — who the author is (link their repo/handle), what the project is, how they approached it, and a subtitle note. Include "看点" and "关键内容" sections with bullet points. Include source links.
+2. **Short version (小红书置顶评论, ≤300 chars)**: just the first 3 paragraphs + subtitle note, compressed. No "看点", no "关键内容", no source links — they waste the 300-char budget.
+
+**Chapters — per platform, format HH:MM:SS.**
+
+All chapter timestamps must use `HH:MM:SS` format (e.g. `01:03:00`), not `MM:SS` — videos over 60 minutes need the hours digit.
+
+Different platforms have different limits:
+- **B站**: max 10 chapters
+- **小红书**: max 15 chapters
+- **YouTube**: no hard limit, but keep reasonable
+
+Generate a full chapter list (for pinned comments) AND a platform-specific trimmed list for each platform's chapter feature. Chapter names must be **≤11 characters**.
+
+To pull the cover image, use yt-dlp:
+```bash
+python -m yt_dlp --cookies-from-browser firefox --js-runtimes node --remote-components ejs:github --write-thumbnail --skip-download -o "cooked/cover.%(ext)s" "<youtube-url>"
+```
+Then convert to JPG: `ffmpeg -y -i cover.webp cover.jpg`
 
 Same tone rule as Step 3: translator, not promoter.
 
-**Chapters.** Read through the translated SRT and find the natural topic boundaries — where the speaker moves to a new command, a new section, a new demo. Emit each as `MM:SS 章节名`, in the **comment format for the target platform**, because Bilibili and YouTube parse chapters from pinned-comment timestamps that users can click to jump:
-
-```
-00:00 开场:为什么做这个
-00:32 安装配置
-03:44 ask-matt 演示
-...
-```
-
-Use the timestamp of the first cue at each boundary (pull it from the SRT). Chapter names are short noun phrases, not sentences. Aim for 5-12 chapters for a 15-20 minute video — too few is useless, too many is noise.
-
-Done when `<name>.upload.md` exists with a title, a description, and a chapter list whose timestamps all fall within the video's duration.
+Done when `<name>.upload.md` exists with per-platform titles, two description versions, per-platform chapter lists (all in HH:MM:SS, names ≤11 chars), and a cover image.
 
 ### Step 7 — Write the per-video README
 
@@ -252,6 +305,8 @@ Done when `README.md` exists at the per-video root, with the header, the index t
 
 ## Platform notes (only if the user asks about uploading)
 
-- **Bilibili cloud subtitles**: only accepts SRT, one language per upload. Run `python <skill>/scripts/subtitles.py split input.bilingual.srt out.zh.srt out.en.srt` to get pure-language files. Upload each separately.
+- **Bilibili cloud subtitles**: only accepts SRT, one language per upload. Run `python <skill>/scripts/subtitles.py split input.bilingual.srt out.zh.srt out.en.srt` to get pure-language files. Upload each separately. **SRT must have no BOM and no empty cues** — the scripts handle this automatically, but if you edited a file manually, verify. Name the files simply `zh.srt` / `en.srt` (not `name.zh-cloud.srt`) — filenames with multiple dots can cause issues.
 - **Bilibili length limit**: ~45 Chinese chars / ~90 ASCII per cue. The `shorten` subcommand fixes cues that exceed this: `python <skill>/scripts/subtitles.py shorten input.zh.srt output.zh.srt --lang zh`. Run it if a cue got rejected on upload.
+- **Bilibili chapters**: max 10 chapters, timestamps in `HH:MM:SS` format, names ≤11 characters.
+- **小红书 chapters**: max 15 chapters, same format requirements.
 - **Hard-burned MP4**: works everywhere, no toggle. Hand the user both the cooked MP4 and the SRTs — they decide at upload time which to use (cooked MP4 for platforms that don't support soft subs, raw video + SRT for platforms that do).

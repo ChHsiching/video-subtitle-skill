@@ -2,14 +2,18 @@
 """Transcribe an audio/video file with whisperX and emit an SRT.
 
 Usage:
-    python transcribe.py <input.wav|mp4> <output.srt> [model_size]
+    python transcribe.py <input.wav|mp4> <output.srt> [model_size] [compute_type]
 
-- model_size defaults to "medium" (good accuracy on CPU, ~1.5GB).
-- Runs on CPU with int8 quantization (fastest on CPU).
+- model_size defaults to "large-v3" (most accurate Whisper model, ~3GB).
+- compute_type defaults to "float32" (most accurate on CPU). On CPU, only
+  int8 / int8_float32 / float32 are supported — float16 will crash with
+  ValueError. If an NVIDIA GPU with CUDA is available, pass "float16".
+- Runs on CPU by default with float32 (no quantization — most accurate).
 - Performs word-level alignment for accurate segment boundaries.
 - Downloads models on first run, reuses from cache afterwards.
+- Outputs SRT with CRLF line endings (Bilibili/YouTube compatible).
 
-Output SRT has one segment per line — designed to be split/translated
+Output SRT has one segment per cue — designed to be split/translated
 downstream without fighting whisperX's segmentation.
 """
 import sys
@@ -28,17 +32,18 @@ def fmt(ts: float) -> str:
 
 def main() -> None:
     if len(sys.argv) < 3:
-        print("usage: transcribe.py <input> <output.srt> [model_size]", file=sys.stderr)
+        print("usage: transcribe.py <input> <output.srt> [model_size] [compute_type]", file=sys.stderr)
         sys.exit(1)
 
     audio_path = sys.argv[1]
     out_path = sys.argv[2]
-    model_size = sys.argv[3] if len(sys.argv) > 3 else "medium"
+    model_size = sys.argv[3] if len(sys.argv) > 3 else "large-v3"
+    compute_type = sys.argv[4] if len(sys.argv) > 4 else "float32"
 
-    print(f"[transcribe] model={model_size} device=cpu compute_type=int8", flush=True)
+    print(f"[transcribe] model={model_size} device=cpu compute_type={compute_type}", flush=True)
     t0 = time.time()
 
-    model = whisperx.load_model(model_size, device="cpu", compute_type="int8")
+    model = whisperx.load_model(model_size, device="cpu", compute_type=compute_type)
     audio = whisperx.load_audio(audio_path)
     result = model.transcribe(audio, batch_size=8, language="en")
     print(f"[transcribe] base transcribe done in {time.time()-t0:.1f}s", flush=True)
@@ -54,13 +59,16 @@ def main() -> None:
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     lines = []
     for i, seg in enumerate(result["segments"], 1):
-        lines.append(f"{i}\n{fmt(seg['start'])} --> {fmt(seg['end'])}\n{seg['text'].strip()}\n")
+        text = seg["text"].strip()
+        if not text:
+            continue  # skip empty segments — they break Bilibili upload
+        lines.append(f"{i}\n{fmt(seg['start'])} --> {fmt(seg['end'])}\n{text}")
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        f.write("\n\n".join(lines) + "\n")
 
     elapsed = time.time() - t0
     audio_dur = result["segments"][-1]["end"] if result["segments"] else 0
-    n = len(result["segments"])
+    n = len(lines)
     print(
         f"[transcribe] done. {n} segments, audio~{audio_dur:.1f}s, "
         f"elapsed={elapsed:.1f}s ({audio_dur/elapsed:.2f}x realtime) -> {out_path}",

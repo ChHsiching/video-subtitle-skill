@@ -54,6 +54,7 @@ def read_srt(path: str):
     """Yield (index, start, end, [text_lines])."""
     with open(path, encoding="utf-8") as f:
         raw = f.read()
+    raw = raw.replace("\r\n", "\n").replace("\r", "\n")
     for block in re.split(r"\n\s*\n", raw.strip()):
         lines = [l for l in block.strip().split("\n") if l.strip()]
         if len(lines) < 3:
@@ -66,9 +67,14 @@ def read_srt(path: str):
 
 
 def write_srt(path: str, cues):
-    """cues: list of (start, end, text). Writes sequential index."""
+    """cues: list of (start, end, text). Writes sequential index.
+    Outputs CRLF line endings (Bilibili/YouTube compatible). Filters empty cues."""
     out = []
-    for i, (start, end, text) in enumerate(cues, 1):
+    i = 0
+    for start, end, text in cues:
+        if not text or not text.strip():
+            continue  # skip empty cues — they break Bilibili upload
+        i += 1
         out.append(f"{i}\n{fmt_ts(start)} --> {fmt_ts(end)}\n{text}")
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n\n".join(out) + "\n")
