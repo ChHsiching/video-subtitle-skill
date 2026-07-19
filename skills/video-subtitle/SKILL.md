@@ -5,7 +5,7 @@ description: Turn a foreign-language raw video into a bilingual (or single-langu
 
 Turn a **raw** video (foreign audio, no subtitles) into a **cooked** video with bilingual or single-language subtitles. The agent does the translation itself — no external translation API.
 
-The skill ships three scripts in its own `scripts/` folder: `transcribe.py` (whisperX → SRT), `subtitles.py` (merge / ASS / split / shorten), and `merge_short.py` (fix shorten fragmentation). They live **inside this skill folder** — not in the user's project. Before calling them, resolve their absolute path. If this skill is installed at `.agents/skills/video-subtitle/`, the scripts are at `.agents/skills/video-subtitle/scripts/`. Use the absolute path when invoking, since the user's video may be anywhere on disk.
+The skill ships two Python scripts in its own `scripts/` folder: `transcribe.py` (whisperX → SRT) and `subtitles.py` (merge / merge-short / ASS / split / shorten). A `windows-detached.ps1` template is also there for launching long jobs on Windows. They live **inside this skill folder** — not in the user's project. Before calling them, resolve their absolute path. If this skill is installed at `.agents/skills/video-subtitle/`, the scripts are at `.agents/skills/video-subtitle/scripts/`. Use the absolute path when invoking, since the user's video may be anywhere on disk.
 
 **All SRT output must have no BOM and no empty cues.** BOM causes Bilibili to reject the file ("格式不正确"), and empty cues (timestamp with no text) also cause rejection. The scripts handle this automatically.
 
@@ -38,7 +38,8 @@ Ask where the user wants the per-video directory before Step 1 — default is `<
 │   └── raw.mp4
 ├── transcript/     Step 1–2: audio + English transcript
 │   ├── <name>.audio.wav
-│   └── <name>.en.srt
+│   ├── <name>.en.srt
+│   └── asr-fixes.md   ASR errors you fixed while translating (Step 3)
 ├── subtitle/       Step 3–4: Chinese translation + bilingual merge
 │   ├── <name>.zh.srt
 │   ├── <name>.bilingual.srt
@@ -70,7 +71,7 @@ Write it as the final step of the run, after every artifact exists. It must cont
 - **Header**: source author, original URL, duration, resolution, processing date.
 - **An index table** — one row per subdirectory, columns `去哪找 | 目录 | 里面是什么`. This is the lookup the folder names can't provide on their own. Use the user's language (Chinese if the run is Chinese-facing).
 - **An artifacts-by-purpose list** — group the actual files by what the user will do with them: "直接发 B 站" (cooked mp4 + upload.md), "传 B 站云字幕" (the cloud-srt files, with the don't-double-up warning), "存档/二次加工" (raw + per-language srts + ass). This is more useful than a flat file list because it answers "I want to do X, which file?"
-- **Processing log**: transcription engine + model, who translated (you), ASR errors you fixed while translating, burn settings, and the verification checks you ran (duration match, subtitle-render spot-check). This is the provenance record — if something looks off later, it tells you how it was made.
+- **Processing log**: transcription engine + model, who translated (you), ASR errors you fixed while translating (reference `transcript/asr-fixes.md` rather than recall from memory), burn settings, and the verification checks you ran (duration match, subtitle-render spot-check). This is the provenance record — if something looks off later, it tells you how it was made.
 
 The README's own completion criterion: a reader who has never seen this run can, in under 30 seconds, point to the file they need for any given purpose.
 
@@ -105,23 +106,14 @@ Background Bash tasks in some environments have a ~10 minute timeout. whisperX t
 
 Instead, **launch the process detached** so it survives the timeout:
 
-**Windows** (use `start /b`):
-```bat
-@echo off
-cd /d "<project-dir>"
-"<python>" "<skill>/scripts/transcribe.py" "<input.wav>" "<output.srt>" large-v3 float32 >> "<log>" 2>&1
-echo DONE >> "<log>"
-```
-Launch with: `cmd.exe /c "start /b /min <wrapper.bat>"`
-
-The Bash call that launches it returns immediately. The detached process keeps running. Monitor by checking the log file or `tasklist /FI "IMAGENAME eq python.exe"`.
+**Windows** — use PowerShell `Start-Process` to detach. A fill-in template lives at `scripts/windows-detached.ps1`; copy it into the per-video `scripts/` folder, set the five path variables, and run `powershell -ExecutionPolicy Bypass -File windows-detached.ps1`. The launch returns immediately. Monitor with `Get-Process python` from PowerShell.
 
 **Linux/macOS** (use `nohup`):
 ```bash
 nohup python <skill>/scripts/transcribe.py <input.wav> <output.srt> large-v3 float32 > <log> 2>&1 &
 ```
 
-Verify the process survives past the timeout before relying on it: write a heartbeat test (a script that appends to a file every 30s for 15 min), launch it detached, and check it's still alive after 10 minutes.
+After either launch, sleep 15s and confirm the log file has output and the process is still alive (`Get-Process python` on Windows, `ps aux | grep python` elsewhere). That's enough — a process alive with a growing log at 15s will outlive the shell timeout.
 
 ## The pipeline
 
@@ -138,7 +130,7 @@ Done when `input.wav` exists and is non-empty.
 ### Step 2 — Transcribe (whisperX, the slow step)
 
 ```bash
-python <skill>/scripts/transcribe.py input.wav input.en.srt [model_size] [compute_type]
+python <skill>/scripts/transcribe.py input.wav input.en.srt [model_size] [compute_type] [language]
 ```
 
 `<skill>` is this skill's folder (wherever it's installed — `.agents/skills/video-subtitle` or `.claude/skills/video-subtitle`). Use the absolute path.
@@ -146,6 +138,8 @@ python <skill>/scripts/transcribe.py input.wav input.en.srt [model_size] [comput
 **Model**: default `large-v3` (most accurate, ~3GB). Use `medium` only if the user asks for speed over accuracy. On CPU with `float32`, large-v3 runs at roughly 0.5–0.7x realtime — a 17-minute video takes ~25-35 min, a 107-minute video takes ~50-60 min. Models download on first run only.
 
 **compute_type**: default `float32` (CPU, no quantization). If CUDA is available (see GPU detection above), pass `float16` for a major speedup. **Never use `int8`** — it quantizes and loses accuracy. **Never use `float16` on CPU** — it crashes.
+
+**language**: default `en` (English). Pass a Whisper language code for non-English sources: `python transcribe.py input.wav input.ja.srt large-v3 float32 ja`. The alignment model loads to match the language. The downstream translation step still targets Chinese — adjust the translate direction in Step 3 when the source isn't English.
 
 **Never chunk the audio.** Process the entire audio file in one call. whisperX internally uses 30-second sliding windows — chunking at boundaries breaks sentences and makes subtitles not match speech. If the task times out, use the detached execution strategy above, not chunking.
 
@@ -163,6 +157,7 @@ The English SRT is your **source of meaning and timing**, not a rigid grid to fi
 - **Never fragment Chinese to mirror English fragmentation.** If matching the English cue grid would leave you with a ≤2-character Chinese line, that line is wrong — merge it into the neighbour. The English stays long on screen; the Chinese condenses the same meaning into a clean short line.
 - **Commands, keyboard shortcuts, file paths, and proper nouns are atomic — never split them across cues.** whisperX often cuts mid-utterance: "open our ZSH" / "rc and there you go" or "hit control" / "S to save". You MUST reassemble these in translation: `.zshrc` stays whole on one cue, `Ctrl+S` stays whole, `source .zshrc` stays whole. The cue boundary is not an excuse to break a command in half. When you spot a cue ending in `ZSH`, `control`, `Esc`, `cd`, etc. with the rest of the term in the next cue, merge them — move the whole term to whichever cue has room, adjust the other cue's wording to stay coherent. This is the single most embarrassing failure mode: a viewer sees "ZSH" then "rc" on two lines and knows the translator wasn't paying attention.
 - **Fix ASR errors while you translate.** Proper nouns, technical terms, and commands are routinely mis-transcribed (e.g. "matpocock" → "mattpocock", "SimLink" → "symlink", "Claw Code" → "Claude Code", "matzilla" → ".mozilla", "scrub menu" → "GRUB menu"). The agent has context the transcription model didn't — use it. If a word sounds like a known command/term but is spelled weird in the transcript, it's a transcription error; write the correct form.
+- **Log each fix to `transcript/asr-fixes.md`** as you go: one line per fix, `<ASR output> → <correct form> — <one line of context>`. Step 7's README references this file for its "ASR corrections" section, so capture fixes during translation rather than reconstructing them from memory at the end.
 - **Keep technical terms in English where Chinese devs would.** Don't translate "skills", "agent", "token", "context window", "CLI" etc. into Chinese — that's how the audience reads them.
 - **Translate technical concepts naturally, not literally.** "observability platform" → "监控平台" (not "可观测性平台" which sounds unnatural in Chinese). "to-do app" → "待办应用". When a concept has a common Chinese name, use it. When it doesn't, keep the English term.
 - **Chinese cue length ≤ 42 characters.** Hard limit (Bilibili). But the floor matters just as much: no cue should be a bare word or punctuation. If you can't fill a cue with at least a short complete phrase, the cue shouldn't exist as a standalone — fold it in.
@@ -175,7 +170,7 @@ The English SRT is your **source of meaning and timing**, not a rigid grid to fi
 
 A run is not done until both passes are complete. If you find one split command, assume there are more — keep scanning until the boundary list is clean. The test: could a viewer screenshot any single cue and have it make sense on its own? If not, fix it.
 
-Done when `<name>.zh.srt` exists, has the same cue count and timestamps as `<name>.en.srt`, every Chinese cue is ≤ 42 characters, and both review passes above passed.
+Done when `<name>.zh.srt` exists, has the same cue count and timestamps as `<name>.en.srt`, every Chinese cue is ≤ 42 characters, `transcript/asr-fixes.md` lists every ASR error you fixed, and both review passes above passed.
 
 ### Step 4 — Shorten, then merge into bilingual SRT + ASS
 
@@ -188,22 +183,22 @@ python <skill>/scripts/subtitles.py shorten input.zh.srt input.zh.short.srt --la
 
 Defaults are zh ≤ 42 chars, en ≤ 90. These are the same limits the cloud-srt path uses; apply them here so the burned video and the soft subtitles are consistent.
 
-**Then merge short cues back together (the step shorten misses).** Char-based shorten splits words mid-character and leaves fragments: orphan punctuation (`。`, `s.`), single-letter tails (`t.`, `d.`), and sub-second cues (0.05s — a flash no one can read). These make the burned video flicker and the cloud upload look broken. After shortening, merge any cue shorter than a minimum duration into its neighbour, and absorb punctuation-only cues. A reference `merge_short.py` for this lives in the per-video `scripts/` folder — write one if it's not there. Run it on **both** en and zh (they share timestamps, so the same merges apply and they stay 1:1):
+**Then absorb the fragments shorten leaves behind.** Char-based shorten splits words mid-character and leaves orphan punctuation (`。`, `s.`), single-letter tails (`t.`, `d.`), and sub-second cues (0.05s — a flash no one can read). These make the burned video flicker and the cloud upload look broken. Run `merge-short` on both languages — it folds any cue under a minimum duration (and any cue whose text is only punctuation) into a neighbour, iterating until stable. Pass `--max-len` matching the `shorten` limit so merge-short re-joins fragments without re-creating the over-length cues shorten just split:
 
 ```bash
-python <skill>/scripts/merge_short.py input.en.short.srt input.en.merged.srt 1.2
-python <skill>/scripts/merge_short.py input.zh.short.srt input.zh.merged.srt 1.2
+python <skill>/scripts/subtitles.py merge-short input.en.short.srt input.en.merged.srt --min-dur 1.2 --max-len 90
+python <skill>/scripts/subtitles.py merge-short input.zh.short.srt input.zh.merged.srt --min-dur 1.2 --max-len 42
 ```
 
-`1.2` is the minimum cue duration in seconds — the broadcast-subtitle floor (viewers need ~1s to read a line). After merging, verify: no cue under 1.0s, no punctuation-only cue, no cue whose text is a single character. The merged files become your en.srt / zh.srt for the rest of the pipeline. If merging produces a cue over the char limit (zh > 42), trim that cue's wording — don't split it back into a flash.
+`1.2` is the minimum cue duration in seconds — the broadcast-subtitle floor (viewers need ~1s to read a line). After merging, verify: no cue under 1.0s, no punctuation-only cue, no cue whose text is a single character, no cue over the char limit. The merged files become your en.srt / zh.srt for the rest of the pipeline.
 
-**Then merge the two shortened files.** If they have the same cue count and aligned timestamps (translator kept 1:1), use `biliteral`:
+**Then merge the two merged files into one bilingual SRT.** `biliteral` handles both shapes automatically — 1:1-aligned cues go through a fast pairwise path; mismatched cue counts (the translator split some cues, or shorten cut each language at different punctuation) fall back to a timestamp-union merge that drops nothing:
 
 ```bash
-python <skill>/scripts/subtitles.py biliteral input.en.short.srt input.zh.short.srt input.bilingual.srt
+python <skill>/scripts/subtitles.py biliteral input.en.merged.srt input.zh.merged.srt input.bilingual.srt
 ```
 
-If the cue counts differ (the translator split some cues), `biliteral` will warn about a mismatch and pair by min-count — that drops cues. Instead merge by timestamp overlap, which handles differing granularity without joining sentences. A small merge helper for this lives in the per-video `scripts/` folder; write one if it's not there (union of all cue boundaries, emit per-interval, coalesce identical consecutive text, never concatenate cue texts into one line).
+It prints which path it took. No need to write a per-run merge helper.
 
 Then generate the ASS from the merged bilingual SRT:
 
@@ -230,18 +225,18 @@ Done when the chosen ASS exists **and** every cue in the merged bilingual SRT is
 
 ### Step 5 — Burn subtitles into video
 
-Hard-burn with libass. Use the command that matches the placement chosen in Step 4.
+Hard-burn with libass. The audio stream must be transcoded to AAC, not copied: YouTube downloads (yt-dlp) and many source videos carry Opus audio, and an Opus track inside an mp4 makes iMovie, QuickTime, and 小红书 reject the file as "unsupported audio format". The `-c:a aac -b:a 192k` in both commands below handles this. Use the command that matches the placement chosen in Step 4.
 
 **Overlay** (default):
 
 ```bash
-ffmpeg -y -i "input.mp4" -vf "ass=input.bilingual.ass" -c:v libx264 -preset faster -crf 20 -pix_fmt yuv420p -c:a copy -movflags +faststart "input.cooked.mp4"
+ffmpeg -y -i "input.mp4" -vf "ass=input.bilingual.ass" -c:v libx264 -preset faster -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "input.cooked.mp4"
 ```
 
 **Bottom-bar** (only with `--bottom-bar PX` in Step 4 — pad a black strip below the frame first, then burn the ASS whose play resolution already accounts for the bar):
 
 ```bash
-ffmpeg -y -i "input.mp4" -vf "pad=iw:ih+PX:color=black,ass=input.bilingual.bar.ass" -c:v libx264 -preset faster -crf 20 -pix_fmt yuv420p -c:a copy -movflags +faststart "input.cooked.bar.mp4"
+ffmpeg -y -i "input.mp4" -vf "pad=iw:ih+PX:color=black,ass=input.bilingual.bar.ass" -c:v libx264 -preset faster -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "input.cooked.bar.mp4"
 ```
 
 `PX` is the same value passed to `--bottom-bar`. Filters run left-to-right: `pad` grows the frame, `ass` renders into the grown area. Output height becomes `source_height + PX`.
@@ -274,7 +269,11 @@ The title should tell the viewer **what happens in the video** (e.g. "从零搭�
 **Description — provide two versions:**
 
 1. **Full version (B站/YouTube)**: 3-4 paragraphs — who the author is (link their repo/handle), what the project is, how they approached it, and a subtitle note. Include "看点" and "关键内容" sections with bullet points. Include source links.
-2. **Short version (小红书置顶评论, ≤300 chars)**: just the first 3 paragraphs + subtitle note, compressed. No "看点", no "关键内容", no source links — they waste the 300-char budget.
+2. **Short version (小红书置顶评论, ≤300 chars)**: just the first 3 paragraphs + subtitle note, compressed. No "看点", no "关键内容", no source links — they waste the 300-char budget. **Verify with a script after writing**: extract the short-version block (between its heading and the next `---`) and run `len()` on it; if it exceeds 300, compress — cut the middle paragraph's bullet-list expansion first, keep the opening hook and the subtitle note.
+
+The subtitle note is fixed wording — use it verbatim, don't invent new phrasing each run:
+
+> 字幕：AI 辅助转录 + 翻译并经人工校对。如有不准确之处，欢迎指出。
 
 **Chapters — per platform, format HH:MM:SS.**
 
@@ -285,7 +284,7 @@ Different platforms have different limits:
 - **小红书**: max 15 chapters
 - **YouTube**: no hard limit, but keep reasonable
 
-Generate a full chapter list (for pinned comments) AND a platform-specific trimmed list for each platform's chapter feature. Chapter names must be **≤11 characters**.
+Generate a full chapter list (for pinned comments) AND a platform-specific trimmed list for each platform's chapter feature. Chapter names must be **≤11 characters** — verify with a script after writing: scan every line matching `^\d\d:\d\d:\d\d\s+(.+)$` and `print` any whose captured name exceeds 11 characters; rewrite those before considering the section done.
 
 To pull the cover image, use yt-dlp:
 ```bash
@@ -305,7 +304,7 @@ Done when `README.md` exists at the per-video root, with the header, the index t
 
 ## Platform notes (only if the user asks about uploading)
 
-- **Bilibili cloud subtitles**: only accepts SRT, one language per upload. Run `python <skill>/scripts/subtitles.py split input.bilingual.srt out.zh.srt out.en.srt` to get pure-language files. Upload each separately. **SRT must have no BOM and no empty cues** — the scripts handle this automatically, but if you edited a file manually, verify. Name the files simply `zh.srt` / `en.srt` (not `name.zh-cloud.srt`) — filenames with multiple dots can cause issues.
+- **Bilibili cloud subtitles**: only accepts SRT, one language per upload. Split them from the Step 4 final `<name>.bilingual.srt` (already `shorten` + `merge-short` cleaned) — `python <skill>/scripts/subtitles.py split input.bilingual.srt out.zh.srt out.en.srt`. Upload each separately. The scripts write no-BOM, no-empty-cue SRT automatically. Name the files simply `zh.srt` / `en.srt` (not `name.zh-cloud.srt`) — filenames with multiple dots can cause issues.
 - **Bilibili length limit**: ~45 Chinese chars / ~90 ASCII per cue. The `shorten` subcommand fixes cues that exceed this: `python <skill>/scripts/subtitles.py shorten input.zh.srt output.zh.srt --lang zh`. Run it if a cue got rejected on upload.
 - **Bilibili chapters**: max 10 chapters, timestamps in `HH:MM:SS` format, names ≤11 characters.
 - **小红书 chapters**: max 15 chapters, same format requirements.
