@@ -22,12 +22,20 @@ Commands:
         ffmpeg burn command must pad the frame to match.
 
     python subtitles.py split        <bilingual.srt> <out_zh.srt> <out_en.srt>
-        Split a bilingual SRT back into two pure-language SRTs.
+        Split a bilingual SRT back into two pure-language SRTs. WARNING: if
+        the bilingual SRT was produced by `biliteral`'s timestamp-union path
+        (which fires when en/zh cue counts differ), cues that had content in
+        only one language get inserted into the bilingual SRT as single lines,
+        and `split` will assign those to the wrong output (English lines leak
+        into zh.srt). Prefer copying the per-language merged SRTs to cloud-srt/
+        directly — `cook subtitles` does this. Use `split` only on pairwise
+        biliteral output where cue counts matched.
 
-    python subtitles.py shorten      <input.srt> <output.srt> [--max-zh N] [--max-en N]
+    python subtitles.py shorten      <input.srt> <output.srt> [--lang {zh,en}] [--max-zh N] [--max-en N]
         Split any cue longer than the limit on sentence punctuation, then
-        hard-wrap, redistributing timestamps proportionally. Defaults:
-        zh=42 chars, en=90 chars (Bilibili-safe).
+        hard-wrap, redistributing timestamps proportionally. --lang picks
+        which limit applies (zh -> --max-zh, en -> --max-en); both default
+        to Bilibili-safe values (zh=42 chars, en=90 chars).
 
 Length control is the whole point of `shorten` and the reason this file
 exists as one module: long cues get rejected by platforms (Bilibili's limit

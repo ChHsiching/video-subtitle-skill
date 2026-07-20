@@ -1,2 +1,3 @@
+cook>=0.1.0
 whisperx>=3.8.0
 yt-dlp>=0.2.0
