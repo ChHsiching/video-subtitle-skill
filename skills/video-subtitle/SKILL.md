@@ -99,6 +99,20 @@ Done when `transcript/<name>.en.srt` exists and the detached log reports `[trans
 
 This is the step that makes the quality. You — the agent running this skill — translate the English SRT into Chinese yourself. You have the full transcript, you understand context, and you'll catch ASR errors the transcription model made.
 
+**Read the source context first.** Before translating, pull the source platform's own metadata — it's authoritative context the transcript can't give you:
+
+```
+cook show-source <output-root> <name>
+```
+
+This surfaces the original title, uploader, channel, links, duration, and crucially the **source description** — which often contains the video's topic outline, chapter titles, mentioned tools/people/projects, and terminology. Use it to:
+
+- **Resolve ambiguous proper nouns.** The source description/tags usually name the tools, people, and projects mentioned. When the transcript has "matzilla" or "Claw Code", the description often has the correct spelling (`.mozilla`, `Claude Code`). This is more reliable than guessing from sound.
+- **Understand the video's structure before you start.** The description's chapter outline (if present) tells you the arc of the video, so you translate section transitions with the right framing.
+- **Match the author's own terminology.** If the description calls something a "crash course", your translation should reflect that, not invent a different term.
+
+Log any ASR fix the source context helped you confirm in `transcript/asr-fixes.md` (same as fixes you found from transcript context alone).
+
 Write translations to `transcript/translations.txt` — **one Chinese line per English cue, line N = cue N** (1-based). Keep the line count exactly equal to the cue count. A helper script (`scripts/make_zh.py` or similar) reads translations.txt + en.srt's timestamps and emits `<name>.zh.srt`. This avoids hand-writing timestamps.
 
 The English SRT is your **source of meaning and timing**, not a rigid grid to fill cell-by-cell. whisperX cuts on speech pauses, which often splits one sentence across 2-3 cues or merges two sentences into one. Your Chinese cues must follow **Chinese sentence boundaries**, not the English cue boundaries. A viewer reads the Chinese — if it's chopped into word-fragments to match English pauses, it's unreadable.
@@ -169,19 +183,21 @@ Done when `cooked/<name>.cooked.{,bar.}mp4` exists, `ffprobe` reports a duration
 
 ### Step 6 — Write the upload metadata
 
-The user is going to post this somewhere. Give them a ready-to-paste title, description, and chapter list — derived from the transcript you just translated, so it actually matches the video. Write it to `cooked/<name>.upload.md`. This is authoring work, like Step 3 — no script.
+The user is going to post this somewhere. Give them a ready-to-paste title, description, and chapter list — derived from **two sources**: the transcript you just translated (what actually happens in the video) and the source context (who the author is, where to find them, the source's own framing). Write it to `cooked/<name>.upload.md`. This is authoring work, like Step 3 — no script.
+
+If you haven't already, run `cook show-source <output-root> <name>` to pull the source context (original title, uploader, uploader_url, webpage_url, description). You'll need these for the author blurb and source links below.
 
 **No Markdown formatting in the actual description text.** Platforms like Bilibili don't render Markdown — `**bold**` shows as literal asterisks. Use plain text with line breaks. The upload.md file itself can use Markdown headings to organize sections, but the copy-paste content must be plain text.
 
 **Titles — provide multiple, per platform:**
-- **B站**: professional, shows what the video is about. Up to ~30 chars. Include the author's identity (repo/handle) if recognizable.
+- **B站**: professional, shows what the video is about. Up to ~30 chars. Include the author's identity (from source context `uploader`/`channel`) if recognizable.
 - **小红书**: ≤20 characters. Same professional tone as B站, just shorter. Don't use marketing language ("大佬带你", "效率翻倍").
-- **YouTube**: can include "(双语字幕)" or English title variant.
+- **YouTube**: can include "(双语字幕)" or the English title variant (from source context `title`).
 
 The title should tell the viewer **what happens in the video** (e.g. "从零搭建一个全新项目"), not use jargon they'd need the description to understand.
 
 **Description — provide two versions:**
-1. **Full version (B站/YouTube)**: 3-4 paragraphs — who the author is (link their repo/handle), what the project is, how they approached it, subtitle note. Include "看点" and "关键内容" sections with bullet points. Include source links.
+1. **Full version (B站/YouTube)**: 3-4 paragraphs — who the author is (link their repo/handle from source context `uploader_url`), what the project is, how they approached it, subtitle note. Include "看点" and "关键内容" sections with bullet points. Include source links (the `webpage_url` from source context, plus any links the author put in their description).
 2. **Short version (小红书置顶评论, ≤300 characters)**: just the first 3 paragraphs + subtitle note, compressed. No "看点", no "关键内容", no source links — they waste the 300-char budget. **Character count = every character including spaces and punctuation** (this is how the platform counts). Verify with `len()` after writing; if over 300, compress.
 
 The subtitle note is fixed wording — use it verbatim:
@@ -209,7 +225,7 @@ Done when `cooked/<name>.upload.md` exists with per-platform titles, two descrip
 The per-video directory **must** contain a `README.md` at its root. It is the index: someone (including you, months later) opens the folder and immediately knows what each subdirectory holds and where to find each artifact. Write it as the final step, after every artifact exists.
 
 It must contain:
-- **Header**: source author, original URL, duration, resolution, processing date.
+- **Header**: source author, original URL, duration, resolution, processing date. Pull the author/URL/duration/upload_date from `cook show-source` (the source context); resolution comes from `ffprobe` on the raw mp4; processing date is today.
 - **An index table** — one row per subdirectory, columns `去哪找 | 目录 | 里面是什么`. Use the user's language (Chinese if the run is Chinese-facing).
 - **An artifacts-by-purpose list** — group files by what the user will do with them: "直接发 B 站" (cooked mp4 + upload.md + cover.jpg), "传 B 站云字幕" (cloud-srt/{zh,en}.srt, each uploaded separately), "存档/二次加工" (raw + per-language srts + ass). This answers "I want to do X, which file?"
 - **Processing log**: transcription engine + model + device, who translated (you), ASR errors you fixed (reference `transcript/asr-fixes.md`), burn settings (overlay vs bottom-bar, CRF, preset), verification checks ran (duration match, subtitle-render spot-check, verify-align exit 0).
