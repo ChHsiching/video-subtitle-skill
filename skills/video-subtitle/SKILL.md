@@ -61,15 +61,44 @@ Rules:
 
 ## The pipeline
 
-### Step 0 — Environment check
+### Step 0 — Ensure the shared environment
+
+cook CLI and whisperx must live in **one persistent shared Python environment** — install once, every video project reuses it. torch alone is ~2GB; reinstalling per-project is the failure mode this step exists to prevent.
+
+This is the agent's job, not the user's. The user never has to think about which Python whisperx is in.
+
+**0a. Find or create the shared environment.** Check these locations in order; use the first that has cook installed:
+
+1. A `VIDEO_TOOLS_VENV` environment variable (explicit user override).
+2. `~/.venvs/video-tools/` (the conventional shared location).
+3. The system Python (if cook is already pip-installed there and not in a project-local venv).
+
+If none exists, create one and install cook into it:
+
+```bash
+python -m venv ~/.venvs/video-tools
+~/.venvs/video-tools/Scripts/pip install video-cook[all]   # Windows
+# or: ~/.venvs/video-tools/bin/pip install video-cook[all]  # macOS/Linux
+```
+
+`[all]` pulls yt-dlp + whisperx + torch in one shot. This is the only time the 2GB download happens.
+
+**0b. Always invoke cook via the shared environment's interpreter**, never the project-local Python. Resolve the cook binary as `<venv>/Scripts/cook.exe` (Windows) or `<venv>/bin/cook` (macOS/Linux). The user's shell PATH does not matter — agent computes the absolute path itself.
+
+**0c. Run doctor from the shared environment:**
 
 ```
-cook doctor
+<shared-venv>/Scripts/cook doctor    # Windows
+<shared-venv>/bin/cook doctor        # macOS/Linux
 ```
 
-Reads the JSON output. If `whisperx` or `yt_dlp` is missing, tell the user to run `pip install video-cook[transcribe]` or `pip install video-cook[download]`. If `ffmpeg` or `node` is missing, tell the user to install them (cook can't pip-install those).
+Read the JSON. `cook doctor` checks the Python it's running in — so by invoking the shared-venv cook, you're checking the shared environment's whisperx/torch/yt_dlp. If any are missing despite 0a (shouldn't happen, but a partial install can), re-run `pip install video-cook[all]` in the shared venv. `ffmpeg` and `node` are system-level — if missing, tell the user to install them (cook can't pip-install those).
 
-Done when `cook doctor` reports `ffmpeg` and `node` installed, plus the extras you'll need for this run (yt-dlp for download steps, whisperx for transcription).
+Done when the shared environment exists, cook is invoked from it, and doctor reports `whisperx`, `yt_dlp`, `torch`, `ffmpeg`, `node` all installed.
+
+**`cook` in every step below means the shared-environment cook binary resolved here**, not whatever `cook` happens to be on PATH. The agent computes the absolute path once in 0b and uses it throughout.
+
+**Why this matters**: `cook transcribe` runs its detached subprocess via `sys.executable` — the Python cook itself is running in. whisperx must be importable from that exact Python. By pinning all cook invocations to the shared environment, every video project transparently reuses the one whisperx install. Models cache under `~/.cache/huggingface/hub/` and `~/.cache/torch/hub/`, also shared across projects for free.
 
 ### Step 1 — Extract audio
 
@@ -87,13 +116,13 @@ Done when `cook extract` exits 0. (The old manual `ffmpeg -y -i ... -vn -ac 1 -a
 cook transcribe <output-root> <name> [--model large-v3] [--compute auto] [--language en]
 ```
 
-Auto-detects CUDA: `--compute auto` picks `float16`+`cuda` if a GPU is available, else `float32`+`cpu`. Never use `int8` — it quantizes and loses accuracy. The command **detaches automatically** — cook launches the transcription in a detached process and returns immediately with a PID and log path. Poll the log file until it contains `[transcribe] done.`
+Auto-detects CUDA: `--compute auto` picks `float16`+`cuda` if a GPU is available, else `float32`+`cpu`. Never use `int8` — it quantizes and loses accuracy. The command **detaches automatically** — cook launches the transcription in a detached process and returns immediately with a JSON object containing `pid`, `log`, `err_log`, and `done_marker`. Poll the `log` file until it contains the `done_marker` string (`[transcribe] done.`) — that signals the subprocess finished.
 
 **Never chunk the audio.** Process the entire file in one call. whisperX uses 30-second sliding windows internally; chunking at boundaries breaks sentences and desyncs subtitles. The detached launch exists specifically to avoid timeouts without chunking.
 
 Tell the user this is slow: CPU + `large-v3` runs at roughly 0.5–0.7× realtime (a 75-minute video takes ~50–90 minutes). While it runs, you can pre-read the partial transcript and start drafting the upload metadata.
 
-Done when `transcript/<name>.en.srt` exists and the detached log reports `[transcribe] done.`
+Done when `transcript/<name>.en.srt` exists and the log file contains the `done_marker` string.
 
 ### Step 3 — Translate (the agent does this, not a script)
 
@@ -173,7 +202,7 @@ Done when `cook subtitles` exits 0 and the JSON output reports no `length_issues
 cook burn <output-root> <name> [--mode overlay|bottom-bar] [--bar-px 180]
 ```
 
-Hard-burns subtitles into the video via ffmpeg + libass. Auto-detaches (returns PID + log path; poll until the log reports the final bitrate line). Audio is transcoded to AAC (source Opus in mp4 breaks iMovie/QuickTime/小红书). Cook runs ffmpeg from the subtitle/ directory with a bare ASS filename — this avoids the Windows `C:` path trap that breaks the `ass` filter.
+Hard-burns subtitles into the video via ffmpeg + libass. Auto-detaches (returns a JSON object with `pid`, `log`, `err_log`, `done_marker`; poll the `log` file until it contains the `done_marker` string `kb/s` — ffmpeg prints bitrate stats as the final step). Audio is transcoded to AAC (source Opus in mp4 breaks iMovie/QuickTime/小红书). Cook runs ffmpeg from the subtitle/ directory with a bare ASS filename — this avoids the Windows `C:` path trap that breaks the `ass` filter.
 
 **Never use segmented/chunked encoding** — it creates ASS timestamp misalignment. Burn the full video in one pass.
 

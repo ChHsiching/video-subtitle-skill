@@ -14,21 +14,25 @@ The pipeline used to be a wall of `ffmpeg` / `yt-dlp` / `python subtitles.py ...
 
 If cook is not installed, the scripts in `scripts/` (`transcribe.py`, `subtitles.py`) still work directly — commands below show both forms. Install cook with `pip install video-cook[all]` to get the wrappers.
 
-## Environment reuse — never reinstall blindly
+## The shared environment — why this design exists
 
-Before touching the pipeline, check what's already on disk. `cook doctor` does this for you:
+cook CLI and whisperx must live in one persistent shared Python environment, not a per-project venv. The reason is `cook transcribe`: it runs its detached transcription subprocess via `sys.executable` (the Python cook itself is running in), and that subprocess imports whisperx. So whisperx must be importable from cook's Python. If you let users `pip install video-cook[transcribe]` into a project-local venv, cook (running from a different Python) won't see it — doctor will report whisperx missing forever.
 
-```
-cook doctor
-```
+The shared environment solves this: one venv, one install of cook + whisperx + torch (~2GB), every video project reuses it by invoking that venv's cook binary. SKILL.md Step 0 has the agent resolve or create this environment automatically. The user never manages venvs.
 
-Reports `ffmpeg`, `node`, `yt_dlp`, `whisperx`, `torch` (+ CUDA availability) as JSON. Read the `issues` list and tell the user what to install only when something's missing.
+Model caches are also shared across projects for free — whisperX uses `~/.cache/huggingface/hub/` (medium ~1.5GB, large-v3 ~3GB) and wav2vec2 alignment `~/.cache/torch/hub/`, both persistent and per-user (not per-venv).
 
-Manual equivalents (if running without cook):
-- **Python venv with whisperx**: check `.venv/` in the current project, then common project dirs. Run `python -c "import whisperx"` against each candidate. Reuse the first that imports cleanly. Only install fresh if none found — torch alone is ~2GB, so reuse aggressively.
-- **ffmpeg**: `ffmpeg -version`. Required for extract + burn + cover conversion. If missing, tell the user to install it (don't try to install it yourself on Windows).
-- **yt-dlp**: `python -c "import yt_dlp"`. If missing, `pip install yt-dlp`.
-- **Models**: whisperX caches to `~/.cache/huggingface/hub/` (medium ~1.5GB, large-v3 ~3GB) and wav2vec2 alignment to `~/.cache/torch/hub/`. These persist across runs — don't pre-download.
+`cook doctor` reports the shared environment's state as JSON: `ffmpeg`, `node`, `yt_dlp`, `whisperx`, `torch` (+ `cuda_available`, `device`). doctor never exits non-zero — it surfaces gaps via the `issues` list for the agent to act on.
+
+## Manual fallback (running without the shared environment)
+
+If for some reason you must run `scripts/transcribe.py` and `scripts/subtitles.py` directly without cook, you are responsible for picking a Python that has whisperx installed:
+
+- Check candidate venvs in order: `$VIDEO_TOOLS_VENV`, `~/.venvs/video-tools/`, project-local `.venv/`.
+- Run `python -c "import whisperx"` against each. Reuse the first that imports cleanly.
+- Only install fresh if none found — torch is ~2GB, reuse aggressively.
+- ffmpeg: `ffmpeg -version`. Required for extract + burn + cover. If missing, ask the user (don't try to install it on Windows yourself).
+- yt-dlp: `python -c "import yt_dlp"`. If missing, `pip install yt-dlp`.
 
 ## GPU detection — determines compute_type
 
