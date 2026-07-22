@@ -124,9 +124,30 @@ Tell the user this is slow: CPU + `large-v3` runs at roughly 0.5–0.7× realtim
 
 Done when `transcript/<name>.en.srt` exists and the log file contains the `done_marker` string.
 
+### Step 2b — Audit ASR output (fix proper nouns before translating)
+
+whisperX routinely mis-transcribes proper nouns, product names, and technical terms. If you translate from the raw ASR output, these errors propagate into the Chinese and the burned video — and they are embarrassing when viewers catch them. **Fix the English transcript first, then translate from the clean version.**
+
+Read the full `transcript/<name>.en.srt` end to end. Scan for:
+
+- **Words that look like mis-spelled product/project names.** "Clawed Code" → Claude Code, "Soundcastle" → Sandcastle, "Groom" → GrillMe, "OpenClaw" → OpenCode. If a proper noun is spelled in a way no real product is, it's an ASR error.
+- **Words you don't recognize.** If the transcript mentions a tool, project, or person you haven't heard of, **search the web to confirm what it actually is** before deciding it's an error. Do not assume an unfamiliar name is wrong and replace it with something you find more plausible — that is how "Pi" (a real coding agent by Mario Zechner) got replaced with "Crush" (a different product). When in doubt, search; when still in doubt, leave the original spelling.
+- **Inconsistent spelling of the same term.** If the same tool appears as "Py" in one cue and "PI" in another, it's the same word — figure out the correct form and unify.
+- **Names from the source context.** Run `cook show-source <output-root> <name>` and extract every proper noun from the source description/tags. These are your ground-truth spellings. Cross-reference the transcript against them.
+
+For each fix, edit `transcript/<name>.en.srt` in place and log it to `transcript/asr-fixes.md`:
+
+```
+<ASR output> → <correct form> — <one line of context or how you confirmed it>
+```
+
+If you searched the web to confirm, note the search query you used.
+
+Done when: every proper noun in `en.srt` has been verified (either confirmed correct or fixed), `asr-fixes.md` lists every change you made, and no unrecognized proper nouns remain. This is a **gate** — do not start Step 3 until this passes.
+
 ### Step 3 — Translate (the agent does this, not a script)
 
-This is the step that makes the quality. You — the agent running this skill — translate the English SRT into Chinese yourself. You have the full transcript, you understand context, and you'll catch ASR errors the transcription model made.
+This is the step that makes the quality. You — the agent running this skill — translate the English SRT into Chinese yourself. By this point, Step 2b has already cleaned the transcript's proper nouns — you're translating from a verified English source, not guessing at ASR errors.
 
 **Read the source context first.** Before translating, pull the source platform's own metadata — it's authoritative context the transcript can't give you:
 
@@ -136,11 +157,9 @@ cook show-source <output-root> <name>
 
 This surfaces the original title, uploader, channel, links, duration, and crucially the **source description** — which often contains the video's topic outline, chapter titles, mentioned tools/people/projects, and terminology. Use it to:
 
-- **Resolve ambiguous proper nouns.** The source description/tags usually name the tools, people, and projects mentioned. When the transcript has "matzilla" or "Claw Code", the description often has the correct spelling (`.mozilla`, `Claude Code`). This is more reliable than guessing from sound.
+- **Resolve ambiguous proper nouns.** The source description/tags usually name the tools, people, and projects mentioned. Cross-reference with Step 2b's audit — if you missed something there, fix it now and log to `asr-fixes.md`.
 - **Understand the video's structure before you start.** The description's chapter outline (if present) tells you the arc of the video, so you translate section transitions with the right framing.
 - **Match the author's own terminology.** If the description calls something a "crash course", your translation should reflect that, not invent a different term.
-
-Log any ASR fix the source context helped you confirm in `transcript/asr-fixes.md` (same as fixes you found from transcript context alone).
 
 Write translations to `transcript/translations.txt` — **one Chinese line per English cue, line N = cue N** (1-based). Keep the line count exactly equal to the cue count. A helper script (`scripts/make_zh.py` or similar) reads translations.txt + en.srt's timestamps and emits `<name>.zh.srt`. This avoids hand-writing timestamps.
 
@@ -151,8 +170,6 @@ The English SRT is your **source of meaning and timing**, not a rigid grid to fi
 - **One Chinese cue = one complete thought / clause.** If English split one sentence across cues 12-13-14, the Chinese for that sentence goes on whichever cue best fits (usually the longest, or split across them at a natural Chinese pause — not at the English word boundary). Never produce a Chinese cue that's a fragment like "惯例" or "的" or "pfetch" alone.
 - **Never fragment Chinese to mirror English fragmentation.** If matching the English cue grid would leave you with a ≤2-character Chinese line, that line is wrong — merge it into the neighbour. The English stays long on screen; the Chinese condenses the same meaning into a clean short line.
 - **Commands, keyboard shortcuts, file paths, and proper nouns are atomic — never split them across cues.** whisperX often cuts mid-utterance: "open our ZSH" / "rc and there you go" or "hit control" / "S to save". You MUST reassemble these in translation: `.zshrc` stays whole on one cue, `Ctrl+S` stays whole, `source .zshrc` stays whole. The cue boundary is not an excuse to break a command in half. When you spot a cue ending in `ZSH`, `control`, `Esc`, `cd`, etc. with the rest of the term in the next cue, merge them — move the whole term to whichever cue has room, adjust the other cue's wording to stay coherent. This is the single most embarrassing failure mode: a viewer sees "ZSH" then "rc" on two lines and knows the translator wasn't paying attention.
-- **Fix ASR errors while you translate.** Proper nouns, technical terms, and commands are routinely mis-transcribed (e.g. "matpocock" → "mattpocock", "SimLink" → "symlink", "Claw Code" → "Claude Code", "matzilla" → ".mozilla", "scrub menu" → "GRUB menu"). The agent has context the transcription model didn't — use it. If a word sounds like a known command/term but is spelled weird in the transcript, it's a transcription error; write the correct form.
-- **Log each fix to `transcript/asr-fixes.md`** as you go: one line per fix, `<ASR output> → <correct form> — <one line of context>`. Step 7's README references this file, so capture fixes during translation rather than reconstructing them from memory at the end.
 - **Keep technical terms in English where Chinese devs would.** Don't translate "skills", "agent", "token", "context window", "CLI" etc. into Chinese — that's how the audience reads them.
 - **Translate technical concepts naturally, not literally.** "observability platform" → "监控平台" (not "可观测性平台" which sounds unnatural). "to-do app" → "待办应用". When a concept has a common Chinese name, use it. When it doesn't, keep the English term.
 - **Chinese cue length ≤ 42 characters.** Hard limit (Bilibili). But the floor matters just as much: no cue should be a bare word or punctuation. If you can't fill a cue with at least a short complete phrase, the cue shouldn't exist as a standalone — fold it in.
