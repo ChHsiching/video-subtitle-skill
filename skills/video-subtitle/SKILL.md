@@ -191,7 +191,9 @@ Exit 0 = perfectly aligned. Non-zero = `missing_translations` and/or `extra_tran
 
 Done when `<name>.zh.srt` exists, `cook verify-align` exits 0, `transcript/asr-fixes.md` lists every ASR error you fixed, and both review passes above passed. (Note: cue count matching is enforced by verify-align, not by hand-counting — the translator may legitimately merge short cues, and the downstream `biliteral` merge handles mismatched counts via timestamp-union.)
 
-### Step 4 — Subtitles (shorten + merge-short + biliteral + ASS + cloud-srt)
+**Optional: produce `<name>.en.full.srt` for downstream dubbing.** whisperX cuts on speech pauses, producing fragment cues that often split one sentence across 2-3 cues. This is fine for subtitles (each fragment displays briefly), but `video-dubbing` needs **complete sentences** — it synthesizes TTS per cue, and a fragment like "and the" synthesizes badly. If the run might continue to dubbing, also produce `<name>.en.full.srt` by merging `en.srt`'s fragment cues at sentence-ending punctuation (`. ! ?`) into full-sentence cues. The cue count drops (e.g. 151 fragments → 141 sentences for an 11-min video). `video-dubbing` reads this file and translates it separately into `translations_dub.txt` — the dub script, distinct from this step's subtitle translation because the two have different constraints (subtitles tolerate fragmentation; dubbing requires complete thoughts). Skip this if dubbing won't run.
+
+### Step 4 — Subtitles (shorten + merge-short + bilateral + ASS + cloud-srt)
 
 ```
 cook subtitles <output-root> <name> [--mode overlay|bottom-bar] [--bar-px 180]
