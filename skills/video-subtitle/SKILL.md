@@ -15,7 +15,7 @@ By default, for a bilingual run, the **shipment** — the full release set:
 2. `transcript/<name>.zh.srt` — Chinese translation
 3. `transcript/asr-fixes.md` — ASR errors you fixed while translating (Step 3)
 4. `subtitle/<name>.bilingual.srt` — bilingual SRT (zh line on top, en below)
-5. `subtitle/<name>.bilingual.ass` — styled ASS for hard-burning (overlay), or `<name>.bilingual.bar.ass` (bottom-bar)
+5. `subtitle/<name>.bilingual.ass` — styled ASS for hard-burning. The default mode is **bottom-bar** (produces `<name>.bilingual.bar.ass`); overlay mode produces `<name>.bilingual.ass`.
 6. `cloud-srt/zh.srt`, `cloud-srt/en.srt` — single-language SRTs for platforms that accept soft subs
 7. `cooked/<name>.cooked.mp4` (or `.cooked.bar.mp4`) — video with subtitles burned in
 8. `cooked/<name>.upload.md` — title, description, chapters for uploading (Step 6)
@@ -191,7 +191,7 @@ Exit 0 = perfectly aligned. Non-zero = `missing_translations` and/or `extra_tran
 
 Done when `<name>.zh.srt` exists, `cook verify-align` exits 0, `transcript/asr-fixes.md` lists every ASR error you fixed, and both review passes above passed. (Note: cue count matching is enforced by verify-align, not by hand-counting — the translator may legitimately merge short cues, and the downstream `biliteral` merge handles mismatched counts via timestamp-union.)
 
-**Optional: produce `<name>.en.full.srt` for downstream dubbing.** whisperX cuts on speech pauses, producing fragment cues that often split one sentence across 2-3 cues. This is fine for subtitles (each fragment displays briefly), but `video-dubbing` needs **complete sentences** — it synthesizes TTS per cue, and a fragment like "and the" synthesizes badly. If the run might continue to dubbing, also produce `<name>.en.full.srt` by merging `en.srt`'s fragment cues at sentence-ending punctuation (`. ! ?`) into full-sentence cues. The cue count drops (e.g. 151 fragments → 141 sentences for an 11-min video). `video-dubbing` reads this file and translates it separately into `translations_dub.txt` — the dub script, distinct from this step's subtitle translation because the two have different constraints (subtitles tolerate fragmentation; dubbing requires complete thoughts). Skip this if dubbing won't run.
+**Optional: produce `<name>.en.full.srt` for downstream dubbing.** whisperX cuts on speech pauses, producing fragment cues that often split one sentence across 2-3 cues. This is fine for subtitles (each fragment displays briefly), but `video-dubbing` needs **complete sentences** — it synthesizes TTS per cue, and a fragment like "and the" synthesizes badly. If the run might continue to dubbing, produce `<name>.en.full.srt` by running `scripts/make_full_srt.py` from the per-video root — it merges `en.srt`'s fragment cues at sentence-ending punctuation (`. ! ?`) into full-sentence cues. The cue count drops (e.g. 151 fragments → 141 sentences for an 11-min video). `video-dubbing` reads this file and translates it separately into `translations_dub.txt` — the dub script, distinct from this step's subtitle translation because the two have different constraints (subtitles tolerate fragmentation; dubbing requires complete thoughts). Skip this if dubbing won't run.
 
 ### Step 4 — Subtitles (shorten + merge-short + bilateral + ASS + cloud-srt)
 
@@ -207,10 +207,10 @@ Runs the full subtitle-processing pipeline in one shot:
 - copies `*.merged.srt` to `cloud-srt/{zh,en}.srt` (does NOT split from bilingual.srt — see REFERENCE.md for why)
 
 **Subtitle placement** — two modes, producing different ASS files:
-- **Overlay** (default): subtitles render on top of the picture. Use when the video has low information density in the lower frame (talking head, slides with margin).
-- **Bottom-bar** (`--mode bottom-bar --bar-px 180`): subtitles sit in a black strip padded below the frame. Use when the video has high information density throughout (IDE demos, terminal sessions, UI walkthroughs) — nothing in the image is covered. A 180px bar fits the two-line bilingual layout on 1080p.
+- **Bottom-bar** (default): subtitles sit in a black strip padded below the frame — nothing in the image is covered. Use for any video with on-screen content the subtitles would obscure: IDE/terminal sessions, UI walkthroughs, diagrams, slides with content reaching the lower frame. A 180px bar fits the two-line bilingual layout on 1080p. This is the default because most technical content is denser than a clean talking head.
+- **Overlay** (`--mode overlay`): subtitles render on top of the picture. Reserve for the narrow case where the lower frame is genuinely empty — a centered talking head, slides with a wide bottom margin.
 
-Don't generate both unless the user asks — pick one.
+Don't generate both unless the user asks — pick one. Default is bottom-bar; switch to overlay only when you can confirm the lower frame has nothing to read.
 
 Done when `cook subtitles` exits 0 and the JSON output reports no `length_issues`. If there are length issues, the source cues were over the limit before shorten — investigate and re-run Step 3 fixes.
 
