@@ -48,7 +48,7 @@ import re
 import argparse
 
 MAX_ZH = 42
-MAX_EN = 90
+MAX_EN = 160  # 2 lines of English (ASS wraps at spaces); only split cues beyond this
 MIN_DUR = 1.2  # broadcast-subtitle readability floor (seconds)
 # Legacy aliases for the argparse defaults below.
 MAX_ZH_DEFAULT = MAX_ZH
