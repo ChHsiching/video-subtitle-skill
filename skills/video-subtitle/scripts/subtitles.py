@@ -323,7 +323,7 @@ def cmd_ass(args):
         zh = text_lines[0] if len(text_lines) > 0 else ""
         en = text_lines[1] if len(text_lines) > 1 else ""
         events.append(f"Dialogue: 0,{s},{e},ZH,,0,0,0,,{zh}")
-        events.append(f"Dialogue: 0,{s},{e},EN,,0,0,0,,{en}")
+        events.append(f"Dialogue: -1,{s},{e},EN,,0,0,0,,{en}")
     with open(args.output, "w", encoding="utf-8") as f:
         f.write(ass_header(args.bottom_bar))
         f.write("\n".join(events))
