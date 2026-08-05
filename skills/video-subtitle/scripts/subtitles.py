@@ -274,7 +274,7 @@ PLAY_RES_Y = 1080
 ZH_MARGINV_OVERLAY = 70   # zh baseline above bottom edge (overlay mode)
 EN_MARGINV_OVERLAY = 130  # en baseline above bottom edge (overlay mode)
 ZH_MARGINV_BAR = 140      # zh baseline above the bar's bottom edge
-EN_MARGINV_BAR = 30       # en baseline above the bar's bottom edge (low enough for 2-line EN to clear ZH)
+EN_MARGINV_BAR = 64       # en baseline: ZH_MV minus ZH line height (~76px) — en hugs zh from below
 
 
 def ass_header(bottom_bar: int = 0) -> str:
