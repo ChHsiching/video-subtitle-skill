@@ -55,6 +55,13 @@ MAX_ZH_DEFAULT = MAX_ZH
 MAX_EN_DEFAULT = MAX_EN
 
 
+def wlen(s):
+    """Display-width units: CJK/full-width char = 2, ASCII/half-width = 1.
+    Mixed zh+en cues overflow at a lower char count than pure-CJK cues
+    because ASCII chars render ~half as wide. zh length checks use this."""
+    return sum(2 if ord(c) > 127 else 1 for c in s)
+
+
 # ---------- SRT parsing ----------
 
 def parse_ts(tc: str) -> float:
@@ -106,12 +113,13 @@ def _is_punct_only(t: str) -> bool:
     return bool(t) and not re.search(r"[A-Za-z0-9\u4e00-\u9fff]", t)
 
 
-def _merge_pass(cues, min_dur, max_len=0):
+def _merge_pass(cues, min_dur, max_len=0, width_aware=False):
     """Single pass: absorb any cue whose duration < min_dur or whose text is
     punctuation-only into a neighbour. Prefers the previous cue; if max_len > 0
     and merging into the previous would overflow it, tries the next cue
     instead; if both overflow, leaves the short cue standalone (it carries
-    real content that can't be dropped). Repeats until stable."""
+    real content that can't be dropped). When width_aware=True, uses wlen()."""
+    mlen = wlen if width_aware else len
     out = []
     i = 0
     pending = list(cues)
@@ -124,7 +132,7 @@ def _merge_pass(cues, min_dur, max_len=0):
             ps, pe, pt = out[-1]
             sep = "" if _is_punct_only(text) or _is_punct_only(pt) else " "
             candidate = (pt + sep + text).strip() if (text and text not in pt) else pt
-            if max_len and len(candidate) > max_len and not _is_punct_only(text):
+            if max_len and mlen(candidate) > max_len and not _is_punct_only(text):
                 out.append([s, e, text])  # keep standalone, will try backward merge below
             else:
                 out[-1] = (ps, e, candidate)
@@ -141,7 +149,7 @@ def _merge_pass(cues, min_dur, max_len=0):
             ns, ne, nt = out[j + 1]
             sep = "" if _is_punct_only(text) or _is_punct_only(nt) else " "
             candidate = (text + sep + nt).strip() if (text and text not in nt) else nt
-            if len(candidate) <= max_len:
+            if mlen(candidate) <= max_len:
                 out[j] = (s, ne, candidate)
                 del out[j + 1]
     return out
@@ -151,10 +159,11 @@ def cmd_merge_short(args):
     cues = list(read_srt(args.input))
     # convert read_srt's (start, end, [lines]) into (start, end, text) for merging
     flat = [(s, e, " ".join(lines).strip()) for s, e, lines in cues]
-    merged = _merge_pass(flat, args.min_dur, args.max_len)
+    wa = args.lang == "zh"
+    merged = _merge_pass(flat, args.min_dur, args.max_len, width_aware=wa)
     # iterate to stable — one pass may leave a fresh short cue
     for _ in range(3):
-        new = _merge_pass(merged, args.min_dur, args.max_len)
+        new = _merge_pass(merged, args.min_dur, args.max_len, width_aware=wa)
         if len(new) == len(merged):
             break
         merged = new
@@ -219,7 +228,7 @@ def _merge_by_timestamp(en_cues, zh_cues):
             new_z, new_x = pz, px
             if z and z not in pz:
                 cand = (pz + " " + z).strip() if pz else z
-                new_z = cand if len(cand) <= MAX_ZH else new_z  # drop text if it overflows
+                new_z = cand if wlen(cand) <= MAX_ZH * 2 else new_z  # width-aware overflow guard
             if x and x not in px:
                 cand = (px + " " + x).strip() if px else x
                 new_x = cand if len(cand) <= MAX_EN else new_x
@@ -345,15 +354,27 @@ def cmd_split(args):
 # ---------- shorten: split long cues, hard-wrap, redistribute time ----------
 
 def split_zh(text, limit=MAX_ZH_DEFAULT):
+    """Split Chinese text into fragments under `limit` WIDTH units (wlen).
+    Splits at sentence punctuation (。！？；), then clause punctuation (，、：),
+    then em-dash/quote boundaries (—— "")."""
     parts = re.split(r"(?<=[。！？；])", text)
     parts = [p.strip() for p in parts if p.strip()]
     refined = []
     for p in parts:
-        if len(p) <= limit:
+        if wlen(p) <= limit:
             refined.append(p)
             continue
-        subs = re.split(r"(?<=[，、])", p)
-        refined.extend(s.strip() for s in subs if s.strip())
+        subs = re.split(r"(?<=[，、：])", p)
+        subs = [s.strip() for s in subs if s.strip()]
+        if all(wlen(s) <= limit for s in subs):
+            refined.extend(subs)
+            continue
+        for s in subs:
+            if wlen(s) <= limit:
+                refined.append(s)
+                continue
+            ss = re.split(r"(?<=[——""])", s)
+            refined.extend(x.strip() for x in ss if x.strip())
     return refined
 
 
@@ -372,28 +393,21 @@ def split_en(text, limit=MAX_EN_DEFAULT):
 
 
 def pack(parts, limit):
-    """Greedily pack fragments into chunks under `limit` chars.
-
-    Word-boundary safe: never splits a word mid-character. If a fragment is
-    longer than the limit, it's broken at the last space before the limit;
-    only a single word longer than the limit itself is hard-cut (rare, and
-    usually a URL or command that can't break)."""
+    """Greedily pack fragments into chunks under `limit` chars (English).
+    Word-boundary safe: never splits a word mid-character."""
     chunks, buf = [], ""
     for p in parts:
         cand = (buf + " " + p) if buf else p
         if len(cand) <= limit:
             buf = cand
             continue
-        # cand overflows: flush buf, then handle p alone
         if buf:
             chunks.append(buf)
             buf = ""
-        # break p at word boundaries until what remains fits the limit
         while len(p) > limit:
-            # find last space within the limit; if none (one giant word), hard-cut
             cut = p.rfind(" ", 0, limit)
             if cut <= 0:
-                cut = limit  # single word longer than limit, no choice
+                cut = limit
             chunks.append(p[:cut])
             p = p[cut:].lstrip()
         buf = p
@@ -402,22 +416,59 @@ def pack(parts, limit):
     return [c.strip() for c in chunks if c.strip()]
 
 
+def pack_zh(parts, limit):
+    """Width-aware packer for Chinese (wlen: CJK=2, ASCII=1).
+    No space joiner (Chinese has no spaces). Fragments exceeding the limit
+    after split_zh's punctuation splitting are hard-cut at the width boundary."""
+    chunks, buf = [], ""
+    for p in parts:
+        cand = (buf + p) if buf else p
+        if wlen(cand) <= limit:
+            buf = cand
+            continue
+        if buf:
+            chunks.append(buf)
+            buf = ""
+        while wlen(p) > limit:
+            w, cut = 0, 0
+            for i, c in enumerate(p):
+                w += 2 if ord(c) > 127 else 1
+                if w > limit:
+                    break
+                cut = i + 1
+            if cut == 0:
+                cut = 1
+            chunks.append(p[:cut])
+            p = p[cut:]
+        buf = p
+    if buf:
+        chunks.append(buf)
+    return [c.strip() for c in chunks if c.strip()]
+
+
 def cmd_shorten(args):
+    """Split long cues at punctuation into single-line cues (one zh line each).
+    Time is allocated by display-width proportion (more accurate than raw char
+    count for mixed zh+en). The cue's [start, end] window is preserved — only
+    its internal segments get proportional slices."""
     out, idx = [], 0
     cues = list(read_srt(args.input))
+    is_zh = args.lang == "zh"
+    mlen = wlen if is_zh else len
     for start, end, text_lines in cues:
         text = " ".join(text_lines).strip()
         dur = end - start
-        if len(text) <= args.limit:
+        if mlen(text) <= args.limit:
             idx += 1
             out.append((start, end, text))
             continue
-        splitter = (lambda t: split_zh(t, args.limit)) if args.lang == "zh" else (lambda t: split_en(t, args.limit))
-        parts = pack(splitter(text), args.limit) or [text]
-        total = sum(len(p) for p in parts) or 1
+        splitter = (lambda t: split_zh(t, args.limit)) if is_zh else (lambda t: split_en(t, args.limit))
+        packer = pack_zh if is_zh else pack
+        parts = packer(splitter(text), args.limit) or [text]
+        total = sum(mlen(p) for p in parts) or 1
         cur = start
         for p in parts:
-            seg_end = min(cur + dur * (len(p) / total), end)
+            seg_end = min(cur + dur * (mlen(p) / total), end)
             idx += 1
             out.append((cur, seg_end, p))
             cur = seg_end
@@ -447,11 +498,11 @@ def main():
     p.add_argument("--max-len", type=int, default=0, metavar="CHARS",
                    help="Skip a merge that would push the target cue's text "
                         "past this many characters (tries the other neighbour, "
-                        "else leaves the short cue standalone). Set to the "
-                        "same limit you passed to `shorten` (90 for en, 42 "
-                        "for zh) so merge-short re-joins shorten's fragments "
-                        "without re-creating the over-length cues shorten "
-                        "just split. Default 0 = no length check.")
+                        "else leaves the short cue standalone). For zh this is "
+                        "width units (CJK=2, ASCII=1). Default 0 = no check.")
+    p.add_argument("--lang", choices=["zh", "en"], default="zh",
+                   help="When zh, max-len is treated as display-width units "
+                        "(CJK=2, ASCII=1) so mixed zh+en cues don't overflow.")
     p.set_defaults(func=cmd_merge_short)
 
     p = sub.add_parser("ass")

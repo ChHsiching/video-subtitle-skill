@@ -84,9 +84,9 @@ nohup python <skill>/scripts/transcribe.py <audio.wav> <output.srt> large-v3 flo
 ### Step 4 — subtitle processing (cook subtitles)
 ```
 python <skill>/scripts/subtitles.py shorten <en.srt> <en.short.srt> --lang en
-python <skill>/scripts/subtitles.py shorten <zh.srt> <zh.short.srt> --lang zh
-python <skill>/scripts/subtitles.py merge-short <en.short.srt> <en.merged.srt> --min-dur 1.2 --max-len 90
-python <skill>/scripts/subtitles.py merge-short <zh.short.srt> <zh.merged.srt> --min-dur 1.2 --max-len 42
+python <skill>/scripts/subtitles.py shorten <zh.srt> <zh.short.srt> --lang zh --max-zh 56
+python <skill>/scripts/subtitles.py merge-short <en.short.srt> <en.merged.srt> --min-dur 1.2 --max-len 90 --lang en
+python <skill>/scripts/subtitles.py merge-short <zh.short.srt> <zh.merged.srt> --min-dur 1.2 --max-len 56 --lang zh
 python <skill>/scripts/subtitles.py biliteral <en.merged.srt> <zh.merged.srt> <bilingual.srt>
 python <skill>/scripts/subtitles.py ass <bilingual.srt> <bilingual.ass>
 # bottom-bar variant:
@@ -137,7 +137,7 @@ Consult when the user asks about uploading, or when authoring Step 6's upload.md
 - Files are no-BOM, no-empty-cue (subtitles.py's `write_srt` guarantees this).
 
 ### Length limits
-- Bilibili: ~45 Chinese chars / ~90 ASCII per cue. The `shorten` + `merge-short` pipeline enforces this; if a cue gets rejected on upload, run `python <skill>/scripts/subtitles.py shorten <input.srt> <output.srt> --lang zh` as a remedial fix.
+- Bilibili: ~45 Chinese chars / ~90 ASCII per cue. The pipeline enforces this via display-width units (`wlen`: CJK=2, ASCII=1); zh cues target ≤56 width units (≈28 CJK chars), split by `shorten` into single-line cues.
 - 小红书 pinned-comment description: ≤300 characters. Count = every character including spaces and punctuation (how the platform counts). Compress if over.
 
 ### Chapter limits
@@ -156,7 +156,7 @@ Hand the user both at upload time — they decide per platform.
 
 | Product | Limit | Counter |
 |---|---|---|
-| Chinese cue (`zh.srt`, `cloud-srt/zh.srt`) | ≤45 chars (Bilibili), ≤42 (internal target) | characters (Chinese counts as 1) |
+| Chinese cue (`zh.srt`, `cloud-srt/zh.srt`) | ≤56 width units (≈28 CJK chars) | display width (CJK=2, ASCII=1 via `wlen`) |
 | English cue (`en.srt`, `cloud-srt/en.srt`) | ≤90 ASCII | characters |
 | 小红书 short description | ≤300 chars | every character incl. spaces+punctuation |
 | Bilibili chapter field name | ≤11 chars | characters |
