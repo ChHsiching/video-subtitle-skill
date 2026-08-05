@@ -273,7 +273,7 @@ PLAY_RES_Y = 1080
 # the margin is measured from the bottom of the picture itself.
 ZH_MARGINV_OVERLAY = 70   # zh baseline above bottom edge (overlay mode)
 EN_MARGINV_OVERLAY = 130  # en baseline above bottom edge (overlay mode)
-ZH_MARGINV_BAR = 110      # zh baseline above the bar's bottom edge
+ZH_MARGINV_BAR = 140      # zh baseline above the bar's bottom edge (leaves room for 2-line EN below)
 EN_MARGINV_BAR = 50       # en baseline above the bar's bottom edge
 
 
