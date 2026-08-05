@@ -294,7 +294,6 @@ def ass_header(bottom_bar: int = 0) -> str:
 Title: Bilingual ZH-EN
 ScriptType: v4.00+
 WrapStyle: 0
-Collisions: Reverse
 ScaledBorderAndShadow: yes
 PlayResY: {res_y}
 PlayResX: {PLAY_RES_X}
