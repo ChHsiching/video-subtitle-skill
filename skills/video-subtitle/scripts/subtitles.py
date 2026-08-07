@@ -235,6 +235,25 @@ def _merge_by_timestamp(en_cues, zh_cues):
             out[-1] = (ps, e, new_z, new_x)
         else:
             out.append([s, e, z, x])
+
+    # dedup: if adjacent cues share the same ZH text, merge them — keep ZH
+    # once, union the EN text. This prevents the "stuttering" where one ZH
+    # sentence repeats because the EN spanned two cues.
+    deduped = []
+    for s, e, z, x in out:
+        if deduped and z and z == deduped[-1][2]:
+            ps, pe, pz, px = deduped[-1]
+            # union EN text (with length guard, matching the absorb step above)
+            if x and x != px:
+                cand = (px + " " + x).strip() if px else x
+                new_x = cand if len(cand) <= MAX_EN else px
+            else:
+                new_x = px
+            deduped[-1] = (ps, e, pz, new_x)
+        else:
+            deduped.append([s, e, z, x])
+    out = deduped
+
     return [(s, e, _bilingual_text(z, x)) for s, e, z, x in out if (z or x)]
 
 
@@ -277,19 +296,26 @@ ZH_MARGINV_BAR = 140      # zh baseline above the bar's bottom edge
 EN_MARGINV_BAR = 48       # en baseline: leaves gap below ZH (2-line EN top ~94 < ZH bottom ~108)
 
 
-def ass_header(bottom_bar: int = 0) -> str:
+def ass_header(bottom_bar: int = 0, fontsize: int = 64, marginv: int | None = None) -> str:
     """Build the ASS [Script Info] + [V4+ Styles] header.
 
     bottom_bar=0 (default): overlay mode — subtitles render over the picture,
     PlayResY stays 1080. bottom_bar>0: the bar's height is added to PlayResY
     so the subtitle coordinate system extends into the bar; ffmpeg then pads
     the frame with a black strip of that height before burning the ASS.
+
+    fontsize overrides the ZH Style's Fontsize (default 64). EN is always 44.
+    marginv overrides the ZH Style's MarginV. When None, uses the mode default
+    (ZH_MARGINV_BAR for bar, ZH_MARGINV_OVERLAY for overlay).
     """
     res_y = PLAY_RES_Y + bottom_bar
-    if bottom_bar > 0:
-        zh_v, en_v = ZH_MARGINV_BAR, EN_MARGINV_BAR
+    if marginv is not None:
+        zh_v = marginv
+    elif bottom_bar > 0:
+        zh_v = ZH_MARGINV_BAR
     else:
-        zh_v, en_v = ZH_MARGINV_OVERLAY, EN_MARGINV_OVERLAY
+        zh_v = ZH_MARGINV_OVERLAY
+    en_v = EN_MARGINV_BAR if bottom_bar > 0 else EN_MARGINV_OVERLAY
     return f"""[Script Info]
 Title: Bilingual ZH-EN
 ScriptType: v4.00+
@@ -300,7 +326,7 @@ PlayResX: {PLAY_RES_X}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ZH,Microsoft YaHei,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,60,60,{zh_v},1
+Style: ZH,Microsoft YaHei,{fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,60,60,{zh_v},1
 Style: EN,Arial,44,&H00E0E0E0,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,60,60,{en_v},1
 
 [Events]
@@ -325,7 +351,7 @@ def cmd_ass(args):
         events.append(f"Dialogue: 0,{s},{e},ZH,,0,0,0,,{zh}")
         events.append(f"Dialogue: -1,{s},{e},EN,,0,0,0,,{en}")
     with open(args.output, "w", encoding="utf-8") as f:
-        f.write(ass_header(args.bottom_bar))
+        f.write(ass_header(args.bottom_bar, args.fontsize, args.marginv))
         f.write("\n".join(events))
     print(f"[ass] {len(events)//2} cues (x2 layers) -> {args.output}")
     if args.bottom_bar > 0:
@@ -438,6 +464,13 @@ def pack_zh(parts, limit):
                 cut = i + 1
             if cut == 0:
                 cut = 1
+            # Word-boundary guard: if the cut lands inside an ASCII letter run,
+            # retreat to the last space within the limit so embedded English
+            # words (product names, commands, config filenames) stay whole.
+            if cut < len(p) and p[cut - 1].isascii() and p[cut].isascii() and p[cut].isalpha():
+                last_space = p.rfind(' ', 0, cut)
+                if last_space > 0:
+                    cut = last_space
             chunks.append(p[:cut])
             p = p[cut:]
         buf = p
@@ -518,6 +551,23 @@ def main():
         "subtitles onto the picture as before. When set, the ASS PlayResY grows "
         "by this many pixels and you must pad the frame with ffmpeg before burning "
         "(see SKILL.md Step 5).",
+    )
+    p.add_argument(
+        "--fontsize",
+        type=int,
+        default=64,
+        metavar="PX",
+        help="ZH subtitle font size (default 64). EN is always 44.",
+    )
+    p.add_argument(
+        "--marginv",
+        type=int,
+        default=None,
+        metavar="PX",
+        help="ZH vertical margin from the bottom edge. When omitted, uses the "
+        "mode default (140 for bottom-bar, 70 for overlay). Override to place "
+        "subtitles at a custom height — e.g. dubbing uses a shorter bar with "
+        "a lower marginv.",
     )
     p.set_defaults(func=cmd_ass)
 
