@@ -130,7 +130,7 @@ whisperX routinely mis-transcribes proper nouns, product names, and technical te
 
 Read the full `transcript/<name>.en.srt` end to end. Scan for:
 
-- **Every proper noun, product name, and person's name.** For each one, ask: is this a real product/project/person, or an ASR mis-transcription? **You cannot answer this from memory alone.** A word you've never heard of might be a real product you just don't know about (e.g. OpenClaw, Pi, Sandcastle are all real tools that look like they could be ASR errors). **Search the web for every proper noun you intend to change.** Only change a spelling if you can confirm: (a) the ASR form doesn't exist as a real product, AND (b) the replacement form does exist and fits the context. Known ASR error patterns: "Clawed Code"/"ClawCode" → Claude Code, "Soundcastle" → Sandcastle, "Groom" → GrillMe — but even these should be cross-referenced with source context when available.
+- **Every proper noun, product name, and person's name.** For each one, ask: is this a real product/project/person, or an ASR mis-transcription? **You cannot answer this from memory alone.** A word you've never heard of might be a real product you just don't know about (e.g. OpenClaw, Pi, Sandcastle are all real tools that look like they could be ASR errors). **Search the web for every proper noun you intend to change.** Only change a spelling if you can confirm: (a) the ASR form doesn't exist as a real product, AND (b) the replacement form does exist and fits the context. Known ASR error patterns — "Clawed Code"/"ClawCode" → Claude Code, "Soundcastle" → Sandcastle, "Groom" → GrillMe — are **examples, not an exhaustive list.** Do not pattern-match against them; read every proper noun in context and verify. Cross-reference with source context when available.
 - **Inconsistent spelling of the same term.** If the same tool appears as "Py" in one cue and "PI" in another, it's the same word — figure out the correct form and unify.
 - **Names from the source context.** Run `cook show-source <output-root> <name>` and extract every proper noun from the source description/tags. These are your ground-truth spellings. Cross-reference the transcript against them.
 
@@ -142,7 +142,7 @@ For each fix, edit `transcript/<name>.en.srt` in place and log it to `transcript
 
 If you searched the web to confirm, note the search query you used.
 
-Done when: every proper noun in `en.srt` has been verified (either confirmed correct or fixed), `asr-fixes.md` lists every change you made, and no unrecognized proper nouns remain. This is a **gate** — do not start Step 3 until this passes.
+Done when: every proper noun in `en.srt` has been verified (either confirmed correct or fixed), `asr-fixes.md` lists every change you made, and no unrecognized proper nouns remain. **Fan out a subagent to do a full-cue review** — it reads every cue end to end, checks every proper noun in context, and web-searches any it questions. The gate passes only when the subagent confirms the transcript is clean. This is a **gate** — do not start Step 3 until this passes.
 
 ### Step 3 — Translate (the agent does this, not a script)
 
@@ -226,7 +226,7 @@ Hard-burns subtitles into the video via ffmpeg + libass. Auto-detaches (returns 
 
 Re-encoding a 17-minute 1080p video takes ~3-5 minutes. A 75-minute video takes ~10-15 minutes. While it runs, draft Step 6 and Step 7.
 
-Done when `cooked/<name>.cooked.{,bar.}mp4` exists, `ffprobe` reports a duration matching the raw (cook checks this), and a spot-check frame at a speaking timestamp shows subtitles rendered.
+Done when `cooked/<name>.cooked.{,bar.}mp4` exists, `ffprobe` reports a duration matching the raw (cook checks this), a spot-check frame at a speaking timestamp shows subtitles rendered, **and a fan-out subagent full-cue review of the bilingual SRT passes.** The subagent reads every cue and confirms: zero split words across cue boundaries, zero adjacent duplicate lines, zero cues missing a language. If the subagent finds defects, fix them and re-burn before proceeding.
 
 ### Step 6 — Write the upload metadata
 
@@ -246,6 +246,7 @@ The title should tell the viewer **what happens in the video** (e.g. "从零搭�
 **Description — provide two versions:**
 1. **Full version (B站/YouTube)**: 3-4 paragraphs — who the author is (link their repo/handle from source context `uploader_url`), what the project is, how they approached it, subtitle note. Include "看点" and "关键内容" sections with bullet points. Include source links (the `webpage_url` from source context, plus any links the author put in their description).
 2. **Short version (小红书置顶评论, ≤300 characters)**: just the first 3 paragraphs + subtitle note, compressed. No "看点", no "关键内容", no source links — they waste the 300-char budget. **Character count = every character including spaces and punctuation** (this is how the platform counts). Verify with `len()` after writing; if over 300, compress.
+3. **小红书正文简介 (≤100 characters)**: one sentence telling the viewer what the video is about. Every character is content — who published what, the core topic, why watch. Do not waste space on metadata like "双语字幕" (that belongs in the pinned comment). Verify with `len()` after writing; if over 100, compress.
 
 The subtitle note is fixed wording — use it verbatim:
 > 字幕：AI 辅助转录 + 翻译并经人工校对。如有不准确之处，欢迎指出。
