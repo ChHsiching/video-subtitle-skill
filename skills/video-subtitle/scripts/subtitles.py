@@ -438,6 +438,13 @@ def pack_zh(parts, limit):
                 cut = i + 1
             if cut == 0:
                 cut = 1
+            # Word-boundary guard: if the cut lands inside an ASCII letter run,
+            # retreat to the last space within the limit so embedded English
+            # words (product names, commands, config filenames) stay whole.
+            if cut < len(p) and p[cut - 1].isascii() and p[cut].isascii() and p[cut].isalpha():
+                last_space = p.rfind(' ', 0, cut)
+                if last_space > 0:
+                    cut = last_space
             chunks.append(p[:cut])
             p = p[cut:]
         buf = p
