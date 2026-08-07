@@ -243,9 +243,10 @@ def _merge_by_timestamp(en_cues, zh_cues):
     for s, e, z, x in out:
         if deduped and z and z == deduped[-1][2]:
             ps, pe, pz, px = deduped[-1]
-            # union EN text
+            # union EN text (with length guard, matching the absorb step above)
             if x and x != px:
-                new_x = (px + " " + x).strip() if px else x
+                cand = (px + " " + x).strip() if px else x
+                new_x = cand if len(cand) <= MAX_EN else px
             else:
                 new_x = px
             deduped[-1] = (ps, e, pz, new_x)

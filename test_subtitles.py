@@ -125,6 +125,10 @@ class TestBiliteralDedup:
                 # If zh_next contains the entirety of zh_cur, that's duplication
                 assert zh_cur not in zh_next or zh_next not in zh_cur, \
                     f"Adjacent ZH suffix overlap at cues {i+1}-{i+2}"
+        # Verify all English text is preserved (no content lost in dedup)
+        en_text = " ".join(b.split("\n")[1] for b in bodies if len(b.split("\n")) > 1)
+        assert "Before we had model invoked skills." in en_text, "EN text lost in dedup"
+        assert "And user invoked skills were hidden." in en_text, "EN text lost in dedup"
 
 
 class TestAssStyleParams:

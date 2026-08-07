@@ -226,7 +226,7 @@ Hard-burns subtitles into the video via ffmpeg + libass. Auto-detaches (returns 
 
 Re-encoding a 17-minute 1080p video takes ~3-5 minutes. A 75-minute video takes ~10-15 minutes. While it runs, draft Step 6 and Step 7.
 
-Done when `cooked/<name>.cooked.{,bar.}mp4` exists, `ffprobe` reports a duration matching the raw (cook checks this), a spot-check frame at a speaking timestamp shows subtitles rendered, **and a fan-out subagent full-cue review of the bilingual SRT passes.** The subagent reads every cue and confirms: zero split words across cue boundaries, zero adjacent duplicate lines, zero cues missing a language. If the subagent finds defects, fix them and re-burn before proceeding.
+Done when `cooked/<name>.cooked.{,bar.}mp4` exists, `ffprobe` reports a duration matching the raw (cook checks this), a spot-check frame at a speaking timestamp shows subtitles rendered, **and a fan-out subagent full-cue review of the bilingual SRT passes.** The subagent reads every cue and confirms: zero split words across cue boundaries, zero adjacent duplicate lines. (Single-language cues are normal in timestamp-union mode — only flag a cue if a language that the source SRTs contained at that timestamp was dropped.) If the subagent finds defects, fix them and re-burn before proceeding.
 
 ### Step 6 — Write the upload metadata
 
@@ -243,7 +243,7 @@ If you haven't already, run `cook show-source <output-root> <name>` to pull the 
 
 The title should tell the viewer **what happens in the video** (e.g. "从零搭建一个全新项目"), not use jargon they'd need the description to understand.
 
-**Description — provide two versions:**
+**Description — provide three versions:**
 1. **Full version (B站/YouTube)**: 3-4 paragraphs — who the author is (link their repo/handle from source context `uploader_url`), what the project is, how they approached it, subtitle note. Include "看点" and "关键内容" sections with bullet points. Include source links (the `webpage_url` from source context, plus any links the author put in their description).
 2. **Short version (小红书置顶评论, ≤300 characters)**: just the first 3 paragraphs + subtitle note, compressed. No "看点", no "关键内容", no source links — they waste the 300-char budget. **Character count = every character including spaces and punctuation** (this is how the platform counts). Verify with `len()` after writing; if over 300, compress.
 3. **小红书正文简介 (≤100 characters)**: one sentence telling the viewer what the video is about. Every character is content — who published what, the core topic, why watch. Do not waste space on metadata like "双语字幕" (that belongs in the pinned comment). Verify with `len()` after writing; if over 100, compress.
