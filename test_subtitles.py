@@ -125,3 +125,49 @@ class TestBiliteralDedup:
                 # If zh_next contains the entirety of zh_cur, that's duplication
                 assert zh_cur not in zh_next or zh_next not in zh_cur, \
                     f"Adjacent ZH suffix overlap at cues {i+1}-{i+2}"
+
+
+class TestAssStyleParams:
+    """ass --fontsize and --marginv override the ZH Style line."""
+
+    def test_custom_fontsize_and_marginv(self, tmp_path):
+        """--fontsize 48 --marginv 5 --bottom-bar 70 produces correct ASS."""
+        inp = tmp_path / "in.srt"
+        out = tmp_path / "out.ass"
+        write_srt(inp, [("00:00:00,000", "00:00:02,000", "中文\nEnglish")])
+        rc, so, se = run_subs("ass", str(inp), str(out),
+                              "--fontsize", "48", "--marginv", "5", "--bottom-bar", "70")
+        assert rc == 0, f"ass failed: {se}"
+        content = out.read_text(encoding="utf-8")
+        assert "PlayResY: 1150" in content  # 1080 + 70
+        # ZH Style line should have Fontsize=48 and MarginV=5
+        zh_style = [l for l in content.split("\n") if l.startswith("Style: ZH,")][0]
+        assert ",48," in zh_style, f"Fontsize not 48 in: {zh_style}"
+        # MarginV is field index 21 (0-based) in the Style line
+        fields = zh_style.split(",")
+        assert fields[21].strip() == "5", f"MarginV not 5: {fields[21]}"
+
+    def test_defaults_match_current_behavior(self, tmp_path):
+        """Without --fontsize/--marginv, output matches current defaults (64/140 bar)."""
+        inp = tmp_path / "in.srt"
+        out = tmp_path / "out.ass"
+        write_srt(inp, [("00:00:00,000", "00:00:02,000", "中文\nEnglish")])
+        rc, so, se = run_subs("ass", str(inp), str(out), "--bottom-bar", "180")
+        assert rc == 0
+        content = out.read_text(encoding="utf-8")
+        zh_style = [l for l in content.split("\n") if l.startswith("Style: ZH,")][0]
+        assert ",64," in zh_style  # default fontsize
+        fields = zh_style.split(",")
+        assert fields[21].strip() == "140"  # default ZH_MARGINV_BAR
+
+    def test_en_style_unchanged(self, tmp_path):
+        """EN Style line should be unaffected by --fontsize/--marginv."""
+        inp = tmp_path / "in.srt"
+        out = tmp_path / "out.ass"
+        write_srt(inp, [("00:00:00,000", "00:00:02,000", "中文\nEnglish")])
+        rc, so, se = run_subs("ass", str(inp), str(out),
+                              "--fontsize", "48", "--marginv", "5", "--bottom-bar", "70")
+        assert rc == 0
+        content = out.read_text(encoding="utf-8")
+        en_style = [l for l in content.split("\n") if l.startswith("Style: EN,")][0]
+        assert ",44," in en_style  # EN fontsize always 44
