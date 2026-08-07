@@ -88,3 +88,40 @@ class TestPackZhWordBoundary:
         bodies = read_srt(out)
         assert len(bodies) == 1
         assert "短文本" in bodies[0]
+
+
+class TestBiliteralDedup:
+    """biliteral must not repeat the same ZH text on adjacent output cues."""
+
+    def test_no_adjacent_zh_duplication(self, tmp_path):
+        """When one ZH cue spans two EN cues, the ZH text should appear once."""
+        en_srt = tmp_path / "en.srt"
+        zh_srt = tmp_path / "zh.srt"
+        out = tmp_path / "out.srt"
+
+        # EN: two cues with different text, close timestamps
+        write_srt(en_srt, [
+            ("00:00:00,000", "00:00:03,000", "Before we had model invoked skills."),
+            ("00:00:03,000", "00:00:06,000", "And user invoked skills were hidden."),
+        ])
+        # ZH: one cue spanning both EN cues (longer duration)
+        write_srt(zh_srt, [
+            ("00:00:00,000", "00:00:06,000", "我们有模型调用的 Skills 和用户调用的 Skills。"),
+        ])
+        rc, so, se = run_subs("biliteral", str(en_srt), str(zh_srt), str(out))
+        assert rc == 0, f"biliteral failed: {se}"
+        bodies = read_srt(out)
+        # Extract ZH lines (line 0 of each cue)
+        zh_lines = [b.split("\n")[0] for b in bodies if b.strip()]
+        # No two adjacent ZH lines should be identical
+        for i in range(len(zh_lines) - 1):
+            assert zh_lines[i] != zh_lines[i + 1], \
+                f"Adjacent ZH duplication at cues {i+1}-{i+2}: '{zh_lines[i]}'"
+        # Also check suffix overlap: cue[i]'s ZH should not be a suffix of cue[i+1]'s
+        for i in range(len(zh_lines) - 1):
+            zh_cur = zh_lines[i].strip()
+            zh_next = zh_lines[i + 1].strip()
+            if len(zh_cur) > 10 and len(zh_next) > 10:
+                # If zh_next contains the entirety of zh_cur, that's duplication
+                assert zh_cur not in zh_next or zh_next not in zh_cur, \
+                    f"Adjacent ZH suffix overlap at cues {i+1}-{i+2}"

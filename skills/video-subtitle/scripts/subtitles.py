@@ -235,6 +235,24 @@ def _merge_by_timestamp(en_cues, zh_cues):
             out[-1] = (ps, e, new_z, new_x)
         else:
             out.append([s, e, z, x])
+
+    # dedup: if adjacent cues share the same ZH text, merge them — keep ZH
+    # once, union the EN text. This prevents the "stuttering" where one ZH
+    # sentence repeats because the EN spanned two cues.
+    deduped = []
+    for s, e, z, x in out:
+        if deduped and z and z == deduped[-1][2]:
+            ps, pe, pz, px = deduped[-1]
+            # union EN text
+            if x and x != px:
+                new_x = (px + " " + x).strip() if px else x
+            else:
+                new_x = px
+            deduped[-1] = (ps, e, pz, new_x)
+        else:
+            deduped.append([s, e, z, x])
+    out = deduped
+
     return [(s, e, _bilingual_text(z, x)) for s, e, z, x in out if (z or x)]
 
 
