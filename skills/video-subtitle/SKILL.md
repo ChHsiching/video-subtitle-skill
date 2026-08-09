@@ -257,22 +257,24 @@ The title should tell the viewer **what happens in the video** (e.g. "从零搭�
 The subtitle note is fixed wording — use it verbatim:
 > 字幕：AI 辅助转录 + 翻译并经人工校对。如有不准确之处，欢迎指出。
 
-**Chapters — two products, different rules:**
-- **Platform chapter fields** (B站 ≤10, 小红书 ≤15, YouTube reasonable): timestamps in `HH:MM:SS`, **names ≤11 characters**. This is the hard platform limit.
-- **Pinned-comment chapter list** (full, detailed): timestamps in `HH:MM:SS`, names have no length limit — this is for a pinned comment under the video, not the platform's chapter field. Longer descriptive names are fine and useful here.
+**Chapters — produce all four versions (this is a hard checklist, not a menu):**
+1. **B站 platform field** (≤10 chapters): `HH:MM:SS` + name ≤11 chars.
+2. **小红书 platform field** (≤15 chapters): `HH:MM:SS` + name ≤11 chars.
+3. **YouTube platform field**: `HH:MM:SS` + name ≤11 chars.
+4. **Pinned-comment chapter list** (full, detailed): `HH:MM:SS` + a descriptive sentence per chapter, no length limit — this goes in a pinned comment under the video, not the platform's chapter field.
 
-All chapter timestamps must use `HH:MM:SS` (e.g. `01:03:00`), not `MM:SS` — videos over 60 minutes need the hours digit.
+The chapter skeleton comes from the source context's description (the author's own outline — `cook show-source` surfaces it). Map each outline point to its timestamp; don't invent a new structure from the transcript. All timestamps `HH:MM:SS` (videos over 60 min need the hours digit).
 
 Same tone rule as Step 3: translator, not promoter.
+
+**Verify the upload.md is complete before placing the cover** — the cover command (`cook cover`) is a one-liner that feels like "done", so confirm the authoring is actually finished first. `cooked/<name>.upload.md` must contain: per-platform titles, three description versions (full / 小红书 ≤300 chars / 小红书 ≤100 chars), all four chapter versions (B站 ≤10 / 小红书 ≤15 / YouTube / pinned-comment, names ≤11 chars, `HH:MM:SS`). If any is missing, write it now.
 
 **Place the cover:**
 ```
 cook cover <output-root> <name>
 ```
 
-Copies `raw/<name>.jpg` to `cooked/cover.jpg`. Done when `cooked/cover.jpg` exists.
-
-Done when `cooked/<name>.upload.md` exists with per-platform titles, two description versions (short ≤300 chars), per-platform chapter lists (HH:MM:SS, platform-field names ≤11 chars), and `cooked/cover.jpg` exists.
+Copies `raw/<name>.jpg` to `cooked/cover.jpg`. Done when `cooked/cover.jpg` exists and the upload.md checklist above is satisfied.
 
 ### Step 7 — Write the per-video README
 
