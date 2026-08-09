@@ -6,7 +6,8 @@ Commands:
     python subtitles.py biliteral   <en.srt> <zh.srt> <out_bilingual.srt>
         Merge two SRTs (zh on top, en below) into one bilingual SRT. 1:1 cue
         alignment -> fast pairwise path; mismatched cue counts -> automatic
-        timestamp-union merge (no cues dropped).
+        timestamp-union merge (short intervals that would overflow are kept
+        standalone rather than dropped).
 
     python subtitles.py merge-short <input.srt> <output.srt> [--min-dur 1.2]
         Absorb cues shorter than --min-dur and cues whose text is only
@@ -202,10 +203,10 @@ def _merge_by_timestamp(en_cues, zh_cues):
     independently on each). Union all cue boundaries -> atomic intervals; each
     interval takes the active zh + active en text; coalesce consecutive
     identical (zh, en) pairs; absorb sub-MIN_DUR and punctuation-only intervals
-    into the previous cue (extending its time, but dropping the text if merging
-    it would exceed the char limit — those texts are shorten fragments that
-    duplicate the previous cue's meaning). Never concatenates a full cue text
-    onto another."""
+    into the previous cue (extending its time). Content is never dropped to
+    fit a length limit — an interval whose text would overflow is kept as a
+    standalone cue instead. Counts how many short intervals could not be
+    absorbed so the caller can surface it."""
     bounds = sorted({c[0] for c in en_cues + zh_cues} | {c[1] for c in en_cues + zh_cues})
     iv = [(s, e, _active_text(zh_cues, (s + e) / 2), _active_text(en_cues, (s + e) / 2))
           for s, e in zip(bounds[:-1], bounds[1:]) if e - s > 1e-6]
@@ -218,43 +219,64 @@ def _merge_by_timestamp(en_cues, zh_cues):
         else:
             coal.append([s, e, z, x])
 
-    # absorb short / punct-only intervals, length-aware
+    # absorb short / punct-only intervals into the previous cue, length-aware.
+    # Punct-only intervals are always safe to drop their text (carry no
+    # meaning). Meaningful short intervals merge only when they fit; if they
+    # would overflow the previous cue, keep them standalone rather than lose
+    # the text — content correctness beats a clean one-cue merge.
     out = []
+    kept_short = 0
     for s, e, z, x in coal:
         dur = e - s
         both_punct = _is_punct_only(z) and _is_punct_only(x)
         if out and (dur < MIN_DUR or both_punct):
             ps, pe, pz, px = out[-1]
             new_z, new_x = pz, px
+            fit = True
             if z and z not in pz:
                 cand = (pz + " " + z).strip() if pz else z
-                new_z = cand if wlen(cand) <= MAX_ZH * 2 else new_z  # width-aware overflow guard
+                if wlen(cand) <= MAX_ZH * 2:       # width-aware overflow guard
+                    new_z = cand
+                else:
+                    fit = False
             if x and x not in px:
                 cand = (px + " " + x).strip() if px else x
-                new_x = cand if len(cand) <= MAX_EN else new_x
-            out[-1] = (ps, e, new_z, new_x)
+                if len(cand) <= MAX_EN:
+                    new_x = cand
+                else:
+                    fit = False
+            if both_punct or fit:
+                out[-1] = (ps, e, new_z, new_x)    # absorb: extend time, text merged
+            else:
+                out.append([s, e, z, x])           # overflow: keep standalone, don't drop
+                kept_short += 1
         else:
             out.append([s, e, z, x])
 
     # dedup: if adjacent cues share the same ZH text, merge them — keep ZH
     # once, union the EN text. This prevents the "stuttering" where one ZH
-    # sentence repeats because the EN spanned two cues.
+    # sentence repeats because the EN spanned two cues. ZH is necessarily
+    # identical here (it's the merge key), so only EN can overflow — union the
+    # EN only if it fits; otherwise leave the EN on its own cue (the ZH repeats
+    # across them, which is the union design for a long ZH over short EN cues).
     deduped = []
     for s, e, z, x in out:
         if deduped and z and z == deduped[-1][2]:
             ps, pe, pz, px = deduped[-1]
-            # union EN text (with length guard, matching the absorb step above)
             if x and x != px:
                 cand = (px + " " + x).strip() if px else x
-                new_x = cand if len(cand) <= MAX_EN else px
+                if len(cand) <= MAX_EN:
+                    deduped[-1] = (ps, e, pz, cand)   # fits: union EN, ZH stays once
+                else:
+                    deduped.append([s, e, z, x])       # overflow: keep separate, ZH repeats
             else:
-                new_x = px
-            deduped[-1] = (ps, e, pz, new_x)
+                deduped[-1] = (ps, e, pz, px)          # EN identical: pure time extension
         else:
             deduped.append([s, e, z, x])
     out = deduped
 
-    return [(s, e, _bilingual_text(z, x)) for s, e, z, x in out if (z or x)]
+    return ([(s, e, _bilingual_text(z, x)) for s, e, z, x in out if (z or x)],
+            kept_short)
 
 
 def _bilingual_text(zh: str, en: str) -> str:
@@ -273,12 +295,13 @@ def cmd_biliteral(args):
     if len(en_cues) == len(zh_cues):
         out = _merge_pairwise(en_cues, zh_cues)
         path = "pairwise (1:1 aligned)"
+        note = ""
     else:
-        out = _merge_by_timestamp(en_cues, zh_cues)
-        path = (f"timestamp-union (en={len(en_cues)}, zh={len(zh_cues)} "
-                f"mismatch -> no cues dropped)")
+        out, kept_short = _merge_by_timestamp(en_cues, zh_cues)
+        path = (f"timestamp-union (en={len(en_cues)}, zh={len(zh_cues)} mismatch)")
+        note = f", {kept_short} short interval(s) kept standalone (would overflow)" if kept_short else ""
     write_srt(args.output, out)
-    print(f"[biliteral] {path}: {len(out)} cues -> {args.output}")
+    print(f"[biliteral] {path}{note}: {len(out)} cues -> {args.output}")
 
 
 # ---------- ass: bilingual SRT -> styled ASS ----------

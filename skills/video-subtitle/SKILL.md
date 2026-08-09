@@ -196,7 +196,7 @@ Done when `<name>.zh.srt` exists, `cook verify-align` exits 0, `transcript/asr-f
 ### Step 4 — Subtitles (shorten + merge-short + bilateral + ASS + cloud-srt)
 
 ```
-cook subtitles <output-root> <name> [--mode overlay|bottom-bar] [--bar-px 180]
+cook subtitles <output-root> <name> [--mode overlay|bottom-bar] [--bar-px N]
 ```
 
 Runs the full subtitle-processing pipeline in one shot:
@@ -207,7 +207,7 @@ Runs the full subtitle-processing pipeline in one shot:
 - copies `*.merged.srt` to `cloud-srt/{zh,en}.srt` (does NOT split from bilingual.srt — see REFERENCE.md for why)
 
 **Subtitle placement** — two modes, producing different ASS files:
-- **Bottom-bar** (default): subtitles sit in a black strip padded below the frame — nothing in the image is covered. Use for any video with on-screen content the subtitles would obscure: IDE/terminal sessions, UI walkthroughs, diagrams, slides with content reaching the lower frame. A 180px bar fits the two-line bilingual layout on 1080p. This is the default because most technical content is denser than a clean talking head.
+- **Bottom-bar** (default): subtitles sit in a black strip padded below the frame — nothing in the image is covered. Use for any video with on-screen content the subtitles would obscure: IDE/terminal sessions, UI walkthroughs, diagrams, slides with content reaching the lower frame. The default bar height (`--bar-px`, see `--help`) fits the two-line bilingual layout on 1080p. This is the default because most technical content is denser than a clean talking head.
 - **Overlay** (`--mode overlay`): subtitles render on top of the picture. Reserve for the narrow case where the lower frame is genuinely empty — a centered talking head, slides with a wide bottom margin.
 
 Don't generate both unless the user asks — pick one. Default is bottom-bar; switch to overlay only when you can confirm the lower frame has nothing to read.
@@ -217,7 +217,7 @@ Done when `cook subtitles` exits 0 and the JSON output reports no `length_issues
 ### Step 5 — Burn subtitles into video
 
 ```
-cook burn <output-root> <name> [--mode overlay|bottom-bar] [--bar-px 180]
+cook burn <output-root> <name> [--mode overlay|bottom-bar] [--bar-px N]
 ```
 
 Hard-burns subtitles into the video via ffmpeg + libass. Auto-detaches (returns a JSON object with `pid`, `log`, `err_log`, `done_marker`; poll the `log` file until it contains the `done_marker` string `kb/s` — ffmpeg prints bitrate stats as the final step). Audio is transcoded to AAC (source Opus in mp4 breaks iMovie/QuickTime/小红书). Cook runs ffmpeg from the subtitle/ directory with a bare ASS filename — this avoids the Windows `C:` path trap that breaks the `ass` filter.
