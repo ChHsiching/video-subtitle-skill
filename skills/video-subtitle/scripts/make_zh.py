@@ -9,14 +9,26 @@ producing zh.srt without hand-writing timestamps. Run from the per-video root:
 Defaults: output-root = cwd, name = the single en.srt found under transcript/.
 Verifies line count == cue count before writing.
 """
-import re, sys
+import argparse
+import re
+import sys
 from pathlib import Path
 
 
 def main() -> None:
-    root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
-    if len(sys.argv) > 2:
-        name = sys.argv[2]
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("output_root", nargs="?", default=None,
+                        help="per-video root (default: cwd)")
+    parser.add_argument("name", nargs="?", default=None,
+                        help="<name> stem (default: inferred from the single "
+                             "en.srt under transcript/)")
+    args = parser.parse_args()
+
+    root = Path(args.output_root) if args.output_root else Path.cwd()
+    if args.name:
+        name = args.name
     else:
         srts = list((root / "transcript").glob("*.en.srt"))
         if not srts:
