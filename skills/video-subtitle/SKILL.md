@@ -234,7 +234,7 @@ The user is going to post this somewhere. Give them a ready-to-paste title, desc
 
 If you haven't already, run `cook show-source <output-root> <name>` to pull the source context (original title, uploader, uploader_url, webpage_url, description). You'll need these for the author blurb and source links below.
 
-**No Markdown formatting in the actual description text.** Platforms like Bilibili don't render Markdown — `**bold**` shows as literal asterisks. Use plain text with line breaks. The upload.md file itself can use Markdown headings to organize sections, but the copy-paste content must be plain text.
+**No Markdown formatting in the copy-paste content.** Platforms like Bilibili don't render Markdown — `**bold**` shows as literal asterisks, and `-` list markers show as literal hyphens. Use plain text with line breaks. List items use the real character `·` (or numbered `1. 2. 3.`), never markdown `-`. The upload.md file itself can use Markdown headings and `-` to organize its own sections (those are notes for you, not pasted to platforms); only the content inside the paste-blocks (fenced ```` ``` ````) must be plain text with `·`.
 
 **Titles — provide multiple, per platform:**
 - **B站**: professional, shows what the video is about. Up to ~30 chars. Include the author's identity (from source context `uploader`/`channel`) if recognizable.
@@ -244,7 +244,13 @@ If you haven't already, run `cook show-source <output-root> <name>` to pull the 
 The title should tell the viewer **what happens in the video** (e.g. "从零搭建一个全新项目"), not use jargon they'd need the description to understand.
 
 **Description — provide three versions:**
-1. **Full version (B站/YouTube)**: 3-4 paragraphs — who the author is (link their repo/handle from source context `uploader_url`), what the project is, how they approached it, subtitle note. Include "看点" and "关键内容" sections with bullet points. Include source links (the `webpage_url` from source context, plus any links the author put in their description).
+1. **Full version (B站/YouTube)**: a fixed five-part structure, in this order —
+   - **定调句** (1-2 sentences): author + what they did + one-sentence value proposition. Not "来自 X 的讲解" but "X 用 Y 做了 Z".
+   - **看点** (numbered 1/2/3): why watch — hooks with a teaser, not a table of contents. Each item is a point with suspense, not a flat fact.
+   - **关键内容** (`·` list): the video's key beats, in "label: content" structure (e.g. "计费模型：…", "词表构造：…") — a structured index, easier to scan than a flat list.
+   - **来源** (`·` list): `来源：\n· 作者：\n· 原视频：<webpage_url>\n· 网站/仓库：<links from author's description>`. Structured list, not inline.
+   - **结尾话术** (fixed, verbatim): the subtitle note from below.
+   Author identity and source links come from source context (`uploader`, `uploader_url`, `webpage_url`, plus any links in the description).
 2. **Short version (小红书置顶评论, ≤300 characters)**: just the first 3 paragraphs + subtitle note, compressed. No "看点", no "关键内容", no source links — they waste the 300-char budget. **Character count = every character including spaces and punctuation** (this is how the platform counts). Verify with `len()` after writing; if over 300, compress.
 3. **小红书正文简介 (≤100 characters)**: one sentence telling the viewer what the video is about. Every character is content — who published what, the core topic, why watch. Do not waste space on metadata like "双语字幕" (that belongs in the pinned comment). Verify with `len()` after writing; if over 100, compress.
 
