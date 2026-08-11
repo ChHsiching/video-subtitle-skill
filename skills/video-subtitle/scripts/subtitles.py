@@ -514,7 +514,7 @@ def cmd_shorten(args):
     for start, end, text_lines in cues:
         text = " ".join(text_lines).strip()
         dur = end - start
-        if mlen(text) <= args.limit:
+        if mlen(text) <= args.limit * 1.15:
             idx += 1
             out.append((start, end, text))
             continue
