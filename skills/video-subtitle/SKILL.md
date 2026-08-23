@@ -98,7 +98,7 @@ Done when the shared environment exists, cook is invoked from it, and doctor rep
 
 **`cook` in every step below means the shared-environment cook binary resolved here**, not whatever `cook` happens to be on PATH. The agent computes the absolute path once in 0b and uses it throughout.
 
-**Why this matters**: `cook transcribe` runs its detached subprocess via `sys.executable` — the Python cook itself is running in. whisperx must be importable from that exact Python. By pinning all cook invocations to the shared environment, every video project transparently reuses the one whisperx install. Models cache under `~/.cache/huggingface/hub/` and `~/.cache/torch/hub/`, also shared across projects for free.
+**Why this matters**: `cook transcribe` runs its subprocess via `sys.executable` — the Python cook itself is running in. whisperx must be importable from that exact Python. By pinning all cook invocations to the shared environment, every video project transparently reuses the one whisperx install. Models cache under `~/.cache/huggingface/hub/` and `~/.cache/torch/hub/`, also shared across projects for free.
 
 ### Step 1 — Extract audio
 
@@ -118,7 +118,7 @@ cook transcribe <output-root> <name> [--model large-v3] [--compute auto] [--lang
 
 Auto-detects CUDA: `--compute auto` picks `float16`+`cuda` if a GPU is available, else `float32`+`cpu`. Never use `int8` — it quantizes and loses accuracy. The command runs in the **foreground by default** — it blocks until transcription finishes, then prints a JSON summary (`log`/`err_log` point at the log files either way). Run it through your task manager (e.g. zcode background tasks) and let that own the lifecycle; `--detach` exists for running straight from a terminal. Completion signals, in order of reliability: the JSON `ok` field, the artifact (`transcript/<name>.en.srt`), or the log's `done_marker` string (`[transcribe] done.`).
 
-**Never chunk the audio.** Process the entire file in one call. whisperX uses 30-second sliding windows internally; chunking at boundaries breaks sentences and desyncs subtitles. The detached launch exists specifically to avoid timeouts without chunking.
+**Never chunk the audio.** Process the entire file in one call. whisperX uses 30-second sliding windows internally; chunking at boundaries breaks sentences and desyncs subtitles. `--detach` exists to survive shell timeouts without chunking.
 
 Tell the user this is slow: CPU + `large-v3` runs at roughly 0.5–0.7× realtime (a 75-minute video takes ~50–90 minutes). While it runs, you can pre-read the partial transcript and start drafting the upload metadata.
 
@@ -220,7 +220,7 @@ Done when `cook subtitles` exits 0 and the JSON output reports no `length_issues
 cook burn <output-root> <name> [--mode overlay|bottom-bar] [--bar-px N]
 ```
 
-Hard-burns subtitles into the video via ffmpeg + libass. Auto-detaches (returns a JSON object with `pid`, `log`, `err_log`, `done_marker`; poll the `log` file until it contains the `done_marker` string `kb/s` — ffmpeg prints bitrate stats as the final step). Audio is transcoded to AAC (source Opus in mp4 breaks iMovie/QuickTime/小红书). Cook runs ffmpeg from the subtitle/ directory with a bare ASS filename — this avoids the Windows `C:` path trap that breaks the `ass` filter.
+Hard-burns subtitles into the video via ffmpeg + libass. Runs in the **foreground by default** — it blocks until done, then prints a JSON summary (same story as transcribe; run it through your task manager, `--detach` from a terminal). In detached mode the log's `done_marker` string is `kb/s` — ffmpeg prints bitrate stats as the final step. Audio is transcoded to AAC (source Opus in mp4 breaks iMovie/QuickTime/小红书). Cook runs ffmpeg from the subtitle/ directory with a bare ASS filename — this avoids the Windows `C:` path trap that breaks the `ass` filter.
 
 **Never use segmented/chunked encoding** — it creates ASS timestamp misalignment. Burn the full video in one pass.
 

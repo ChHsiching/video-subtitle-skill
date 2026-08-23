@@ -157,7 +157,7 @@ Hand the user both at upload time — they decide per platform.
 | Product | Limit | Counter |
 |---|---|---|
 | Chinese cue (`zh.srt`, `cloud-srt/zh.srt`) | ≤56 width units (≈28 CJK chars) | display width (CJK=2, ASCII=1 via `wlen`) |
-| English cue (`en.srt`, `cloud-srt/en.srt`) | ≤90 ASCII | characters |
+| English cue (`en.srt`, `cloud-srt/en.srt`) | ≤160 width units (2 wrapped ASS lines; `MAX_EN`) | display width (CJK=2, ASCII=1 via `wlen`) |
 | 小红书 short description | ≤300 chars | every character incl. spaces+punctuation |
 | Bilibili chapter field name | ≤11 chars | characters |
 | 小红书 chapter field name | ≤11 chars | characters |
