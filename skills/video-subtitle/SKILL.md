@@ -116,7 +116,7 @@ Done when `cook extract` exits 0. (The old manual `ffmpeg -y -i ... -vn -ac 1 -a
 cook transcribe <output-root> <name> [--model large-v3] [--compute auto] [--language en]
 ```
 
-Auto-detects CUDA: `--compute auto` picks `float16`+`cuda` if a GPU is available, else `float32`+`cpu`. Never use `int8` — it quantizes and loses accuracy. The command **detaches automatically** — cook launches the transcription in a detached process and returns immediately with a JSON object containing `pid`, `log`, `err_log`, and `done_marker`. Poll the `log` file until it contains the `done_marker` string (`[transcribe] done.`) — that signals the subprocess finished.
+Auto-detects CUDA: `--compute auto` picks `float16`+`cuda` if a GPU is available, else `float32`+`cpu`. Never use `int8` — it quantizes and loses accuracy. The command runs in the **foreground by default** — it blocks until transcription finishes, then prints a JSON summary (`log`/`err_log` point at the log files either way). Run it through your task manager (e.g. zcode background tasks) and let that own the lifecycle; `--detach` exists for running straight from a terminal. Completion signals, in order of reliability: the JSON `ok` field, the artifact (`transcript/<name>.en.srt`), or the log's `done_marker` string (`[transcribe] done.`).
 
 **Never chunk the audio.** Process the entire file in one call. whisperX uses 30-second sliding windows internally; chunking at boundaries breaks sentences and desyncs subtitles. The detached launch exists specifically to avoid timeouts without chunking.
 
@@ -226,7 +226,7 @@ Hard-burns subtitles into the video via ffmpeg + libass. Auto-detaches (returns 
 
 Re-encoding a 17-minute 1080p video takes ~3-5 minutes. A 75-minute video takes ~10-15 minutes. While it runs, draft Step 6 and Step 7.
 
-Done when `cooked/<name>.cooked.{,bar.}mp4` exists, `ffprobe` reports a duration matching the raw (cook checks this), a spot-check frame at a speaking timestamp shows subtitles rendered, **and a fan-out subagent full-cue review of the bilingual SRT passes.** The subagent reads every cue and confirms: zero split words across cue boundaries, zero adjacent duplicate lines. (Single-language cues are normal in timestamp-union mode — only flag a cue if a language that the source SRTs contained at that timestamp was dropped.) If the subagent finds defects, fix them and re-burn before proceeding.
+Done when `cooked/<name>.cooked.{,bar.}mp4` exists, `ffprobe` reports a duration matching the raw (cook checks this), a spot-check frame at a speaking timestamp shows subtitles rendered, **and a fan-out subagent full-cue review of the bilingual SRT passes.** The subagent reads every cue and confirms: zero split words across cue boundaries, zero adjacent duplicate lines, zero misrouted layers (the ZH layer never holds ASCII-only text and the EN layer never holds CJK — the `[ass]` generator routes single-language cues by content and warns on misroutes), and max EN cue length ≤160 display-width units (width, not chars: CJK=2/ASCII=1). (Single-language cues are normal in timestamp-union mode — only flag a cue if a language that the source SRTs contained at that timestamp was dropped.) If the subagent finds defects, fix them and re-burn before proceeding.
 
 ### Step 6 — Write the upload metadata
 
@@ -248,7 +248,7 @@ The title should tell the viewer **what happens in the video** (e.g. "从零搭�
    - **定调句** (1-2 sentences): author + what they did + one-sentence value proposition. Not "来自 X 的讲解" but "X 用 Y 做了 Z".
    - **看点** (numbered 1/2/3): why watch — hooks with a teaser, not a table of contents. Each item is a point with suspense, not a flat fact.
    - **关键内容** (`·` list): the video's key beats, in "label: content" structure (e.g. "计费模型：…", "词表构造：…") — a structured index, easier to scan than a flat list.
-   - **来源** (`·` list): `来源：\n· 作者：\n· 原视频：<webpage_url>\n· 网站/仓库：<links from author's description>`. Structured list, not inline.
+   - **来源** (`·` list): `来源：\n· 作者：\n· 原视频：<webpage_url>\n· 网站/仓库：<links from author's description>\n· 时间：<upload_date as YYYY.M.D>`. Structured list, not inline. The `· 时间` line is the video's PUBLISH date (source context `upload_date`, e.g. 20260423 → 2026.4.23) as the last `·` item.
    - **结尾话术** (fixed, verbatim): the subtitle note from below.
    Author identity and source links come from source context (`uploader`, `uploader_url`, `webpage_url`, plus any links in the description).
 2. **Short version (小红书置顶评论, ≤300 characters)**: just the first 3 paragraphs + subtitle note, compressed. No "看点", no "关键内容", no source links — they waste the 300-char budget. **Character count = every character including spaces and punctuation** (this is how the platform counts). Verify with `len()` after writing; if over 300, compress.
