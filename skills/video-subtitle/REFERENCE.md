@@ -57,7 +57,7 @@ Background Bash tasks in some agent environments have a ~10 minute timeout. whis
 - **Windows**: launches via PowerShell `Start-Process -WindowStyle Hidden -RedirectStandardOutput/RedirectStandardError`, returns immediately with PID.
 - **Unix**: launches via `subprocess.Popen(start_new_session=True)` (equivalent to `setsid`), returns immediately with PID.
 
-After a detached launch, the JSON output gives you `log` and `err_log` paths plus a `done_marker` string. Poll the log until it contains the done marker (e.g. `[transcribe] done.` or ffmpeg's final bitrate line).
+After a detached launch, the JSON output gives you `log` and `err_log` paths plus a `done_marker` string. Poll the log until it contains the done marker (e.g. `[transcribe] done.` or ffmpeg's final bitrate line). If the PID dies without the marker ever appearing, the run failed: read the log tail (dub stages print `Stage N FAILED`/`Stage N ABORTED`) — do not wait on a marker that will never come.
 
 ## Raw commands cook runs internally
 
