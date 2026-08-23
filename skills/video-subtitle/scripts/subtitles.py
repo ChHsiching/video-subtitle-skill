@@ -36,7 +36,8 @@ Commands:
         Split any cue longer than the limit on sentence punctuation, then
         hard-wrap, redistributing timestamps proportionally. --lang picks
         which limit applies (zh -> --max-zh, en -> --max-en); both default
-        to Bilibili-safe values (zh=42 chars, en=90 chars).
+        to pipeline-safe values (zh=42 width units ~= 21 CJK chars, en=160
+        ASCII chars ~= 2 wrapped ASS lines).
 
 Length control is the whole point of `shorten` and the reason this file
 exists as one module: long cues get rejected by platforms (Bilibili's limit
