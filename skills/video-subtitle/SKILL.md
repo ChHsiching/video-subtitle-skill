@@ -98,7 +98,7 @@ Done when the shared environment exists, cook is invoked from it, and doctor rep
 
 **`cook` in every step below means the shared-environment cook binary resolved here**, not whatever `cook` happens to be on PATH. The agent computes the absolute path once in 0b and uses it throughout.
 
-**Why this matters**: `cook transcribe` runs its detached subprocess via `sys.executable` — the Python cook itself is running in. whisperx must be importable from that exact Python. By pinning all cook invocations to the shared environment, every video project transparently reuses the one whisperx install. Models cache under `~/.cache/huggingface/hub/` and `~/.cache/torch/hub/`, also shared across projects for free.
+**Why this matters**: `cook transcribe` runs its subprocess via `sys.executable` — the Python cook itself is running in. whisperx must be importable from that exact Python. By pinning all cook invocations to the shared environment, every video project transparently reuses the one whisperx install. Models cache under `~/.cache/huggingface/hub/` and `~/.cache/torch/hub/`, also shared across projects for free.
 
 ### Step 1 — Extract audio
 
@@ -116,9 +116,9 @@ Done when `cook extract` exits 0. (The old manual `ffmpeg -y -i ... -vn -ac 1 -a
 cook transcribe <output-root> <name> [--model large-v3] [--compute auto] [--language en]
 ```
 
-Auto-detects CUDA: `--compute auto` picks `float16`+`cuda` if a GPU is available, else `float32`+`cpu`. Never use `int8` — it quantizes and loses accuracy. The command **detaches automatically** — cook launches the transcription in a detached process and returns immediately with a JSON object containing `pid`, `log`, `err_log`, and `done_marker`. Poll the `log` file until it contains the `done_marker` string (`[transcribe] done.`) — that signals the subprocess finished.
+Auto-detects CUDA: `--compute auto` picks `float16`+`cuda` if a GPU is available, else `float32`+`cpu`. Never use `int8` — it quantizes and loses accuracy. The command runs in the **foreground by default** — it blocks until transcription finishes, then prints a JSON summary (`log`/`err_log` point at the log files either way). Run it through your task manager (e.g. zcode background tasks) and let that own the lifecycle; `--detach` exists for running straight from a terminal. Completion signals, in order of reliability: the JSON `ok` field, the artifact (`transcript/<name>.en.srt`), or the log's `done_marker` string (`[transcribe] done.`).
 
-**Never chunk the audio.** Process the entire file in one call. whisperX uses 30-second sliding windows internally; chunking at boundaries breaks sentences and desyncs subtitles. The detached launch exists specifically to avoid timeouts without chunking.
+**Never chunk the audio.** Process the entire file in one call. whisperX uses 30-second sliding windows internally; chunking at boundaries breaks sentences and desyncs subtitles. `--detach` exists to survive shell timeouts without chunking.
 
 Tell the user this is slow: CPU + `large-v3` runs at roughly 0.5–0.7× realtime (a 75-minute video takes ~50–90 minutes). While it runs, you can pre-read the partial transcript and start drafting the upload metadata.
 
@@ -220,13 +220,13 @@ Done when `cook subtitles` exits 0 and the JSON output reports no `length_issues
 cook burn <output-root> <name> [--mode overlay|bottom-bar] [--bar-px N]
 ```
 
-Hard-burns subtitles into the video via ffmpeg + libass. Auto-detaches (returns a JSON object with `pid`, `log`, `err_log`, `done_marker`; poll the `log` file until it contains the `done_marker` string `kb/s` — ffmpeg prints bitrate stats as the final step). Audio is transcoded to AAC (source Opus in mp4 breaks iMovie/QuickTime/小红书). Cook runs ffmpeg from the subtitle/ directory with a bare ASS filename — this avoids the Windows `C:` path trap that breaks the `ass` filter.
+Hard-burns subtitles into the video via ffmpeg + libass. Runs in the **foreground by default** — it blocks until done, then prints a JSON summary (same story as transcribe; run it through your task manager, `--detach` from a terminal). In detached mode the log's `done_marker` string is `kb/s` — ffmpeg prints bitrate stats as the final step. Audio is transcoded to AAC (source Opus in mp4 breaks iMovie/QuickTime/小红书). Cook runs ffmpeg from the subtitle/ directory with a bare ASS filename — this avoids the Windows `C:` path trap that breaks the `ass` filter.
 
 **Never use segmented/chunked encoding** — it creates ASS timestamp misalignment. Burn the full video in one pass.
 
 Re-encoding a 17-minute 1080p video takes ~3-5 minutes. A 75-minute video takes ~10-15 minutes. While it runs, draft Step 6 and Step 7.
 
-Done when `cooked/<name>.cooked.{,bar.}mp4` exists, `ffprobe` reports a duration matching the raw (cook checks this), a spot-check frame at a speaking timestamp shows subtitles rendered, **and a fan-out subagent full-cue review of the bilingual SRT passes.** The subagent reads every cue and confirms: zero split words across cue boundaries, zero adjacent duplicate lines. (Single-language cues are normal in timestamp-union mode — only flag a cue if a language that the source SRTs contained at that timestamp was dropped.) If the subagent finds defects, fix them and re-burn before proceeding.
+Done when `cooked/<name>.cooked.{,bar.}mp4` exists, `ffprobe` reports a duration matching the raw (cook checks this), a spot-check frame at a speaking timestamp shows subtitles rendered, **and a fan-out subagent full-cue review of the bilingual SRT passes.** The subagent reads every cue and confirms: zero split words across cue boundaries, zero adjacent duplicate lines, zero misrouted layers (the ZH layer never holds ASCII-only text and the EN layer never holds CJK — the `[ass]` generator routes single-language cues by content and warns on misroutes), and cue lengths within the pipeline's legal ceilings — ZH ≤64 and EN ≤184 display-width units (width, not chars: CJK=2/ASCII=1; shorten's ×1.15 mild-overrun exemption legally passes ZH 57-64 and EN 161-184 — do not flag those bands, only ceilings are defects). (Single-language cues are normal in timestamp-union mode — only flag a cue if a language that the source SRTs contained at that timestamp was dropped.) If the subagent finds defects, fix them and re-burn before proceeding.
 
 ### Step 6 — Write the upload metadata
 
@@ -248,7 +248,7 @@ The title should tell the viewer **what happens in the video** (e.g. "从零搭�
    - **定调句** (1-2 sentences): author + what they did + one-sentence value proposition. Not "来自 X 的讲解" but "X 用 Y 做了 Z".
    - **看点** (numbered 1/2/3): why watch — hooks with a teaser, not a table of contents. Each item is a point with suspense, not a flat fact.
    - **关键内容** (`·` list): the video's key beats, in "label: content" structure (e.g. "计费模型：…", "词表构造：…") — a structured index, easier to scan than a flat list.
-   - **来源** (`·` list): `来源：\n· 作者：\n· 原视频：<webpage_url>\n· 网站/仓库：<links from author's description>`. Structured list, not inline.
+   - **来源** (`·` list): `来源：\n· 作者：\n· 原视频：<webpage_url>\n· 网站/仓库：<links from author's description>\n· 时间：<upload_date as YYYY.M.D>`. Structured list, not inline. The `· 时间` line is the video's PUBLISH date (source context `upload_date`, e.g. 20260423 → 2026.4.23) as the last `·` item.
    - **结尾话术** (fixed, verbatim): the subtitle note from below.
    Author identity and source links come from source context (`uploader`, `uploader_url`, `webpage_url`, plus any links in the description).
 2. **Short version (小红书置顶评论, ≤300 characters)**: just the first 3 paragraphs + subtitle note, compressed. No "看点", no "关键内容", no source links — they waste the 300-char budget. **Character count = every character including spaces and punctuation** (this is how the platform counts). Verify with `len()` after writing; if over 300, compress.
@@ -302,4 +302,4 @@ Done when `cook verify-shipment` exits 0. The run is not done until this passes 
 
 The following details are pushed out of this file because they're consulted on demand, not every run. Load them when the situation calls for it:
 
-- **[REFERENCE.md](REFERENCE.md)** — environment-reuse details (venv hunting, model cache paths), GPU detection (CUDA/AMD/float16/float32 tradeoffs), detached-execution internals (what `cook _detach` does, the old `windows-detached.ps1` template), the raw ffmpeg/yt-dlp/whisperx commands cook runs internally (for running without cook), the Windows `ass`-filter path gotcha, why `cook subtitles` copies merged SRTs instead of running `subtitles.py split` (the union-mode cue-leak bug), platform upload notes (Bilibili/小红书/YouTube limits, soft-sub vs hard-burn strategy), and the length/counting rules in detail.
+- **[REFERENCE.md](REFERENCE.md)** — environment-reuse details (venv hunting, model cache paths), GPU detection (CUDA/AMD/float16/float32 tradeoffs), `--detach` mode internals (what cook's `_detach()` does), the raw ffmpeg/yt-dlp/whisperx commands cook runs internally (for running without cook), the Windows `ass`-filter path gotcha, why `cook subtitles` copies merged SRTs instead of running `subtitles.py split` (the union-mode cue-leak bug), platform upload notes (Bilibili/小红书/YouTube limits, soft-sub vs hard-burn strategy), and the length/counting rules in detail.

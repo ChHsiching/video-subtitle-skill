@@ -36,7 +36,8 @@ Commands:
         Split any cue longer than the limit on sentence punctuation, then
         hard-wrap, redistributing timestamps proportionally. --lang picks
         which limit applies (zh -> --max-zh, en -> --max-en); both default
-        to Bilibili-safe values (zh=42 chars, en=90 chars).
+        to pipeline-safe values (zh=42 width units ~= 21 CJK chars, en=160
+        ASCII chars ~= 2 wrapped ASS lines).
 
 Length control is the whole point of `shorten` and the reason this file
 exists as one module: long cues get rejected by platforms (Bilibili's limit
@@ -367,16 +368,37 @@ def ass_ts(ts: float) -> str:
 
 def cmd_ass(args):
     events = []
+    n = 0
+    misrouted = 0
     for start, end, text_lines in read_srt(args.input):
         s, e = ass_ts(start), ass_ts(end)
-        zh = text_lines[0] if len(text_lines) > 0 else ""
-        en = text_lines[1] if len(text_lines) > 1 else ""
+        # The biliteral union can emit single-language cues (one track has no
+        # active text in that window). Route by CONTENT, not line position: a
+        # lone English line dropped into the ZH layer renders in the wrong
+        # font/position and leaves the EN band empty (seen in the wild).
+        zh, en = "", ""
+        if len(text_lines) >= 2:
+            zh, en = text_lines[0], text_lines[1]
+        elif len(text_lines) == 1:
+            if any(ord(c) > 127 for c in text_lines[0]):
+                zh = text_lines[0]
+            else:
+                en = text_lines[0]
         events.append(f"Dialogue: 0,{s},{e},ZH,,0,0,0,,{zh}")
         events.append(f"Dialogue: -1,{s},{e},EN,,0,0,0,,{en}")
+        if zh and all(ord(c) < 128 for c in zh):
+            misrouted += 1
+        if en and any(ord(c) > 127 for c in en):
+            misrouted += 1
+        n += 1
     with open(args.output, "w", encoding="utf-8") as f:
         f.write(ass_header(args.bottom_bar, args.fontsize, args.marginv))
         f.write("\n".join(events))
-    print(f"[ass] {len(events)//2} cues (x2 layers) -> {args.output}")
+    print(f"[ass] {n} cues (x2 layers) -> {args.output}")
+    if misrouted:
+        print(f"[ass] WARNING: {misrouted} misrouted event(s) — ZH layer holds "
+              f"ASCII-only text or EN layer holds CJK; inspect the input SRT",
+              file=sys.stderr)
     if args.bottom_bar > 0:
         print(
             f"[ass] bottom-bar mode: PlayResY={PLAY_RES_Y + args.bottom_bar}. "

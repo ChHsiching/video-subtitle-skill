@@ -47,19 +47,17 @@ AMD GPUs (e.g. RX 6750 XT) are NOT usable by PyTorch/CUDA on Windows. A machine 
 
 Note: the old `scripts/transcribe.py` hardcoded `device="cpu"` in three places, so even passing `float16` would crash. `cook transcribe` fixes this — it parameterizes device based on the auto-detection above. If you must run `transcribe.py` directly, pass `compute_type=float32` to avoid the hardcoded-device bug.
 
-## Detached execution — running long tasks without timeout
+## `--detach` mode — running long tasks without a shell timeout
 
 Background Bash tasks in some agent environments have a ~10 minute timeout. whisperX transcription and ffmpeg encoding both exceed this for long videos.
 
 **Never chunk the audio or video to work around the timeout** — chunking destroys transcription quality (sentences cut at boundaries) and creates ASS timestamp misalignment in burned video. whisperX uses 30-second sliding windows internally; let it process the entire file in one call.
 
-`cook transcribe` and `cook burn` detach automatically. Cook's `_detach()` helper:
+`cook transcribe` and `cook burn` run in the **foreground by default** (blocking, JSON summary on completion — the right mode when an outer task manager supervises). Pass `--detach` when running straight from a shell with a timeout; Cook's `_detach()` helper:
 - **Windows**: launches via PowerShell `Start-Process -WindowStyle Hidden -RedirectStandardOutput/RedirectStandardError`, returns immediately with PID.
 - **Unix**: launches via `subprocess.Popen(start_new_session=True)` (equivalent to `setsid`), returns immediately with PID.
 
-After either launch, the JSON output gives you `log` and `err_log` paths plus a `done_marker` string. Poll the log until it contains the done marker (e.g. `[transcribe] done.` or ffmpeg's final bitrate line).
-
-The old `scripts/windows-detached.ps1` template is preserved for reference but is no longer the recommended path — cook's `_detach()` covers both transcribe and burn uniformly, and the template was transcribe-only.
+After a detached launch, the JSON output gives you `log` and `err_log` paths plus a `done_marker` string. Poll the log until it contains the done marker (e.g. `[transcribe] done.` or ffmpeg's final bitrate line). If the PID dies without the marker ever appearing, the run failed: read the log tail (dub stages print `Stage N FAILED`/`Stage N ABORTED`) — do not wait on a marker that will never come.
 
 ## Raw commands cook runs internally
 
@@ -85,7 +83,7 @@ nohup python <skill>/scripts/transcribe.py <audio.wav> <output.srt> large-v3 flo
 ```
 python <skill>/scripts/subtitles.py shorten <en.srt> <en.short.srt> --lang en
 python <skill>/scripts/subtitles.py shorten <zh.srt> <zh.short.srt> --lang zh --max-zh 56
-python <skill>/scripts/subtitles.py merge-short <en.short.srt> <en.merged.srt> --min-dur 1.2 --max-len 90 --lang en
+python <skill>/scripts/subtitles.py merge-short <en.short.srt> <en.merged.srt> --min-dur 1.2 --max-len 160 --lang en
 python <skill>/scripts/subtitles.py merge-short <zh.short.srt> <zh.merged.srt> --min-dur 1.2 --max-len 56 --lang zh
 python <skill>/scripts/subtitles.py biliteral <en.merged.srt> <zh.merged.srt> <bilingual.srt>
 python <skill>/scripts/subtitles.py ass <bilingual.srt> <bilingual.ass>
@@ -156,8 +154,8 @@ Hand the user both at upload time — they decide per platform.
 
 | Product | Limit | Counter |
 |---|---|---|
-| Chinese cue (`zh.srt`, `cloud-srt/zh.srt`) | ≤56 width units (≈28 CJK chars) | display width (CJK=2, ASCII=1 via `wlen`) |
-| English cue (`en.srt`, `cloud-srt/en.srt`) | ≤90 ASCII | characters |
+| Chinese cue (`zh.srt`, `cloud-srt/zh.srt`) | target 56 / ceiling 64 width units (≈28/32 CJK chars) | display width (CJK=2, ASCII=1 via `wlen`) |
+| English cue (`en.srt`, `cloud-srt/en.srt`) | target 160 / ceiling 184 width units (2 wrapped ASS lines; `MAX_EN` and its ×1.15 exemption) | display width (CJK=2, ASCII=1 via `wlen`) |
 | 小红书 short description | ≤300 chars | every character incl. spaces+punctuation |
 | Bilibili chapter field name | ≤11 chars | characters |
 | 小红书 chapter field name | ≤11 chars | characters |
