@@ -52,8 +52,8 @@ import argparse
 MAX_ZH = 42
 MAX_EN = 160  # 2 lines of English (ASS wraps at spaces); only split cues beyond this
 # Absorption ceiling for the biliteral union's short-interval merge: 56 x1.15,
-# matching shorten's mild-overrun exemption and the downstream length gate.
-# The union must never EMIT a cue wider than the pipeline's legal band.
+# matching shorten's mild-overrun exemption and the documented ZH <=64 review
+# ceiling. The union must never EMIT a cue wider than the pipeline's legal band.
 _ZH_ABSORB_CEIL = 64
 MIN_DUR = 1.2  # broadcast-subtitle readability floor (seconds)
 # Legacy aliases for the argparse defaults below.
@@ -232,8 +232,8 @@ def _merge_by_timestamp(en_cues, zh_cues):
     #
     # Two guards keep the absorbed text legal (both learned the hard way):
     # 1. Width ceiling 64 = 56 x1.15, the same exemption band shorten and the
-    #    downstream length gate use. The old MAX_ZH*2 (=84) let absorbed cues
-    #    reach widths the single-line ZH band cannot render.
+    #    documented ZH <=64 review ceiling use. The old MAX_ZH*2 (=84) let
+    #    absorbed cues reach widths the single-line ZH band cannot render.
     # 2. Continuation awareness: a short interval whose text stays active in
     #    the NEXT interval is a boundary sliver (one language's cue starts a
     #    few ms/100s of ms before the other's boundary). Its text is about to
@@ -537,9 +537,13 @@ def pack_zh(parts, limit):
             # Punctuation guard: a width-boundary cut can land right BEFORE a
             # punctuation run, leaving the next chunk to start with "，本质…"
             # — a leading-punct cue that reads as a stray mark. Consume the
-            # run into this chunk; a width unit or two over the limit is far
-            # cheaper than an orphaned comma.
-            while cut < len(p) and p[cut] in "，。、：；！？——…）】”>,.;:!?":
+            # run into this chunk, capped at 8 extra width units so the chunk
+            # can never cross the 64 ceiling (56 + 8); a few units over the
+            # split limit is far cheaper than an orphaned comma.
+            w_extra = 0
+            while (cut < len(p) and p[cut] in "，。、：；！？——…）】”>,.;:!?"
+                   and w_extra + (2 if ord(p[cut]) > 127 else 1) <= 8):
+                w_extra += 2 if ord(p[cut]) > 127 else 1
                 cut += 1
             chunks.append(p[:cut])
             p = p[cut:]
