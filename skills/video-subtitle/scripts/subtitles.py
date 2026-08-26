@@ -51,6 +51,10 @@ import argparse
 
 MAX_ZH = 42
 MAX_EN = 160  # 2 lines of English (ASS wraps at spaces); only split cues beyond this
+# Absorption ceiling for the biliteral union's short-interval merge: 56 x1.15,
+# matching shorten's mild-overrun exemption and the downstream length gate.
+# The union must never EMIT a cue wider than the pipeline's legal band.
+_ZH_ABSORB_CEIL = 64
 MIN_DUR = 1.2  # broadcast-subtitle readability floor (seconds)
 # Legacy aliases for the argparse defaults below.
 MAX_ZH_DEFAULT = MAX_ZH
@@ -225,22 +229,36 @@ def _merge_by_timestamp(en_cues, zh_cues):
     # meaning). Meaningful short intervals merge only when they fit; if they
     # would overflow the previous cue, keep them standalone rather than lose
     # the text — content correctness beats a clean one-cue merge.
+    #
+    # Two guards keep the absorbed text legal (both learned the hard way):
+    # 1. Width ceiling 64 = 56 x1.15, the same exemption band shorten and the
+    #    downstream length gate use. The old MAX_ZH*2 (=84) let absorbed cues
+    #    reach widths the single-line ZH band cannot render.
+    # 2. Continuation awareness: a short interval whose text stays active in
+    #    the NEXT interval is a boundary sliver (one language's cue starts a
+    #    few ms/100s of ms before the other's boundary). Its text is about to
+    #    be shown in full by the following cue — merging it into the previous
+    #    cue as well made the same clause display twice back-to-back. Skip
+    #    the merge for the continuing language; the text survives next cue.
     out = []
     kept_short = 0
-    for s, e, z, x in coal:
+    for i, (s, e, z, x) in enumerate(coal):
         dur = e - s
         both_punct = _is_punct_only(z) and _is_punct_only(x)
         if out and (dur < MIN_DUR or both_punct):
+            nxt = coal[i + 1] if i + 1 < len(coal) else None
+            z_continues = nxt is not None and z and z == nxt[2]
+            x_continues = nxt is not None and x and x == nxt[3]
             ps, pe, pz, px = out[-1]
             new_z, new_x = pz, px
             fit = True
-            if z and z not in pz:
+            if z and z not in pz and not z_continues:
                 cand = (pz + " " + z).strip() if pz else z
-                if wlen(cand) <= MAX_ZH * 2:       # width-aware overflow guard
+                if wlen(cand) <= _ZH_ABSORB_CEIL:    # width-aware overflow guard
                     new_z = cand
                 else:
                     fit = False
-            if x and x not in px:
+            if x and x not in px and not x_continues:
                 cand = (px + " " + x).strip() if px else x
                 if len(cand) <= MAX_EN:
                     new_x = cand
@@ -516,6 +534,13 @@ def pack_zh(parts, limit):
                 last_space = p.rfind(' ', 0, cut)
                 if last_space > 0:
                     cut = last_space
+            # Punctuation guard: a width-boundary cut can land right BEFORE a
+            # punctuation run, leaving the next chunk to start with "，本质…"
+            # — a leading-punct cue that reads as a stray mark. Consume the
+            # run into this chunk; a width unit or two over the limit is far
+            # cheaper than an orphaned comma.
+            while cut < len(p) and p[cut] in "，。、：；！？——…）】”>,.;:!?":
+                cut += 1
             chunks.append(p[:cut])
             p = p[cut:]
         buf = p

@@ -175,3 +175,89 @@ class TestAssStyleParams:
         content = out.read_text(encoding="utf-8")
         en_style = [l for l in content.split("\n") if l.startswith("Style: EN,")][0]
         assert ",44," in en_style  # EN fontsize always 44
+
+
+class TestUnionBoundaryDefects:
+    """Q5: the biliteral union used to (a) absorb short intervals up to
+    MAX_ZH*2=84 width — over the 64 render ceiling — and (b) merge a
+    boundary-sliver's text into the previous cue while the SAME text stayed
+    active in the next cue, double-displaying the clause."""
+
+    def _bilingual(self, tmp_path, en, zh):
+        en_p, zh_p, out_p = tmp_path / "en.srt", tmp_path / "zh.srt", tmp_path / "out.srt"
+        write_srt(en_p, en)
+        write_srt(zh_p, zh)
+        rc, so, se = run_subs("biliteral", str(en_p), str(zh_p), str(out_p))
+        assert rc == 0, se
+        return out_p.read_text(encoding="utf-8")
+
+    def test_boundary_sliver_no_double_display(self, tmp_path):
+        # zh cue B starts 0.3s BEFORE the en boundary -> a 0.3s sliver interval.
+        # zh has more cues than en (the dub layout), forcing the union path.
+        # Old behavior: B's text merged into cue A AND shown next -> twice.
+        out = self._bilingual(tmp_path,
+            [("00:00:00,000", "00:00:04,700", "English A span"),
+             ("00:00:05,000", "00:00:09,000", "English B span")],
+            [("00:00:00,000", "00:00:02,500", "中文甲句子前半"),
+             ("00:00:02,500", "00:00:04,700", "中文甲句子后半"),
+             ("00:00:04,700", "00:00:09,000", "中文乙句子")])
+        texts = [b.strip().split("\n")[2] for b in out.split("\n\n") if b.strip()]
+        joined = [t for t in texts if "中文乙" in t]
+        assert len(joined) == 1, out          # shown once, not twice
+        assert all("中文乙" not in t or t == "中文乙句子" for t in texts), out
+
+    def test_absorbed_width_ceiling_64(self, tmp_path):
+        # a short interval whose text does NOT continue next may still be
+        # absorbed — but the merged cue must never exceed width 64
+        a = "一二三四五六七八九十" * 3          # 60w
+        b = "乙句"                              # would make 65w merged
+        out = self._bilingual(tmp_path,
+            [("00:00:00,000", "00:00:04,900", "English long span")],
+            [("00:00:00,000", "00:00:04,000", a),
+             ("00:00:04,000", "00:00:04,500", b),
+             ("00:00:04,500", "00:00:04,900", "丙句尾巴显示内容")])
+        for block in out.split("\n\n"):
+            if not block.strip():
+                continue
+            zh = block.split("\n")[-1] if "\n" not in block.split("\n", 1)[-1] else None
+        widths = [sum(2 if ord(c) > 0x2E7F else 1 for c in blk.split("\n", 1)[0])
+                  for blk in out.split("\n\n") if blk.strip()]
+        assert all(w <= 64 for w in widths), out
+
+    def test_real_run_union_clean(self, tmp_path):
+        # regression vs the shipped defect: a ZH cue starting 345ms before
+        # its EN boundary used to merge into the previous cue AND repeat
+        zh = [("00:00:44,000", "00:00:45,500", "前一句的内容展示前半"),
+              ("00:00:45,500", "00:00:47,000", "前一句的内容后半"),
+              ("00:00:47,000", "00:00:50,000", "这时候就可以把整场拷问转成一份问卷。")]
+        en = [("00:00:44,000", "00:00:47,345", "first english sentence here"),
+              ("00:00:47,345", "00:00:50,000", "second english sentence")]
+        out = self._bilingual(tmp_path, en, zh)
+        count = out.count("这时候就可以把整场拷问转成一份问卷")
+        assert count == 1, out
+
+
+class TestShortenOrphanPunctuation:
+    """Q6: pack_zh's width hard-cut could land right before a comma, leaving
+    the next chunk to start with '，' — an orphaned leading-punct cue."""
+
+    def test_comma_stays_with_preceding_chunk(self, tmp_path):
+        inp, out = tmp_path / "in.srt", tmp_path / "out.srt"
+        write_srt(inp, [("00:06:34,667", "00:06:41,517",
+            "Diagnosing Bugs 和 Resolving Merge Conflicts 这两个技能，"
+            "本质上都是在补模型自己的短板。")])
+        rc, so, se = run_subs("shorten", str(inp), str(out),
+                              "--lang", "zh", "--max-zh", "56")
+        assert rc == 0, se
+        content = out.read_text(encoding="utf-8")
+        assert not any(line.startswith("，") or line.startswith("、")
+                       for line in content.split("\n"))
+        # the comma belongs to the end of the first chunk
+        assert "这两个技能，" in content
+
+    def test_short_line_untouched(self, tmp_path):
+        inp, out = tmp_path / "in.srt", tmp_path / "out.srt"
+        write_srt(inp, [("00:00:00,000", "00:00:02,000", "短句无需切分。")])
+        rc, _, _ = run_subs("shorten", str(inp), str(out), "--lang", "zh")
+        assert rc == 0
+        assert "短句无需切分。" in out.read_text(encoding="utf-8")
