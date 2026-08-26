@@ -540,7 +540,8 @@ def pack_zh(parts, limit):
             # punctuation run, leaving the next chunk to start with "，本质…"
             # — a leading-punct cue that reads as a stray mark. Consume the
             # run into this chunk, capped at 8 extra width units so the chunk
-            # can never cross the 64 ceiling (56 + 8); a few units over the
+            # can never cross the 64 ceiling at the pipeline's 56 split limit
+            # (56 + 8); a few units over the
             # split limit is far cheaper than an orphaned comma.
             w_extra = 0
             while (cut < len(p) and p[cut] in "，。、：；！？——…）】”>),.;:!?\"'"
