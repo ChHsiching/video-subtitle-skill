@@ -641,9 +641,9 @@ def main():
         default=None,
         metavar="PX",
         help="ZH vertical margin from the bottom edge. When omitted, uses the "
-        "mode default (140 for bottom-bar, 70 for overlay). Override to place "
-        "subtitles at a custom height — e.g. dubbing uses a shorter bar with "
-        "a lower marginv.",
+        "mode default (140 for bottom-bar, 70 for overlay) — every pipeline "
+        "caller keeps the default, so the bilingual release and the dub burn "
+        "share one layout. Override only for a custom placement.",
     )
     p.set_defaults(func=cmd_ass)
 

@@ -216,12 +216,9 @@ class TestUnionBoundaryDefects:
             [("00:00:00,000", "00:00:04,000", a),
              ("00:00:04,000", "00:00:04,500", b),
              ("00:00:04,500", "00:00:04,900", "丙句尾巴显示内容")])
-        for block in out.split("\n\n"):
-            if not block.strip():
-                continue
-        widths = [sum(2 if ord(c) > 0x2E7F else 1 for c in blk.split("\n", 1)[0])
+        widths = [sum(2 if ord(c) > 0x2E7F else 1 for c in blk.strip().split("\n")[2])
                   for blk in out.split("\n\n") if blk.strip()]
-        assert all(w <= 64 for w in widths), out
+        assert widths and all(w <= 64 for w in widths), out
 
     def test_real_run_union_clean(self, tmp_path):
         # regression vs the shipped defect: a ZH cue starting 345ms before
