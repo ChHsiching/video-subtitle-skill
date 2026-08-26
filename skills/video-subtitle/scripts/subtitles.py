@@ -260,7 +260,9 @@ def _merge_by_timestamp(en_cues, zh_cues):
                     fit = False
             if x and x not in px and not x_continues:
                 cand = (px + " " + x).strip() if px else x
-                if len(cand) <= MAX_EN:
+                # 160 x1.15 = 184, matching the EN exemption band the review
+                # gate allows (same symmetry as the ZH ceiling above).
+                if len(cand) <= int(MAX_EN * 1.15):
                     new_x = cand
                 else:
                     fit = False
@@ -541,7 +543,7 @@ def pack_zh(parts, limit):
             # can never cross the 64 ceiling (56 + 8); a few units over the
             # split limit is far cheaper than an orphaned comma.
             w_extra = 0
-            while (cut < len(p) and p[cut] in "，。、：；！？——…）】”>,.;:!?"
+            while (cut < len(p) and p[cut] in "，。、：；！？——…）】”>),.;:!?\"'"
                    and w_extra + (2 if ord(p[cut]) > 127 else 1) <= 8):
                 w_extra += 2 if ord(p[cut]) > 127 else 1
                 cut += 1

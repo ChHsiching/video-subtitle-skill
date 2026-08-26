@@ -219,7 +219,6 @@ class TestUnionBoundaryDefects:
         for block in out.split("\n\n"):
             if not block.strip():
                 continue
-            zh = block.split("\n")[-1] if "\n" not in block.split("\n", 1)[-1] else None
         widths = [sum(2 if ord(c) > 0x2E7F else 1 for c in blk.split("\n", 1)[0])
                   for blk in out.split("\n\n") if blk.strip()]
         assert all(w <= 64 for w in widths), out
