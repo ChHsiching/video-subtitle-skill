@@ -5,7 +5,7 @@ description: Turn a foreign-language raw video into a bilingual (or single-langu
 
 Turn a **raw** video (foreign audio, no subtitles) into a **cooked** video with bilingual or single-language subtitles. The agent does the translation itself — no external translation API.
 
-Deterministic execution (audio extraction, transcription, subtitle processing, burning) is handled by the [`cook`](https://github.com/ChHsiching/video-cook) CLI. The agent focuses on the creative work the CLI can't do: translation, copywriting, quality judgment. If `cook` is not installed, the scripts in `scripts/` still work directly — see REFERENCE.md.
+Deterministic execution (audio extraction, transcription, subtitle processing, burning) is handled by the [`cook`](https://github.com/ChHsiching/video-cook) CLI. The agent focuses on the creative work the CLI can't do: translation, copywriting, quality judgment. If `cook` is not installed, install it — `pip install video-cook[all]` carries every stage script.
 
 ## What you produce
 
