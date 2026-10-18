@@ -108,7 +108,7 @@ cook extract <output-root> <name>
 
 Produces `transcript/<name>.audio.wav` (16kHz mono WAV, the format whisperX needs).
 
-Cook's download now picks the max-bitrate video stream within the target resolution (codec priority vp9 > h264 > av01 — av01 streams at the same resolution often carry half the bitrate of the vp9 twin and were auto-picked four times) and records the landed codecs in `source.json` under `cargo.video_codec`/`audio_codec`. If `cargo` shows av01 where a vp9 stream existed, re-download explicitly.
+Cook's download picks the max-bitrate video stream within the target resolution (codec priority vp9 > h264 > av01 — an av01 stream at the same resolution can carry half the vp9 twin's bitrate) and records the landed codecs in `source.json` under `cargo.video_codec`/`audio_codec`. Verify `cargo` after download; av01 where a vp9 stream existed means re-running `cook download`.
 
 Done when `cook extract` exits 0. (The old manual `ffmpeg -y -i ... -vn -ac 1 -ar 16000 -c:a pcm_s16le ...` is what cook runs internally — see REFERENCE.md if you need to run it without cook.)
 
@@ -244,7 +244,7 @@ If you haven't already, run `cook show-source <output-root> <name>` to pull the 
 [名头/主体] [内容类型词]：[具体做法或事实，数字/命令名直接上]丨[第二卖点或活动名]
 ```
 
-- 名头先行：可查证的作者身份（`Matt Pocock 直播：` / `在 SpaceX 造 Grok Bot 的人`）。生面孔必须先立身份再报内容。
+- 名头先行：可查证的作者身份，取自 source context 的 `uploader`/`channel`/`uploader_url`（`Matt Pocock 直播：` / `在 SpaceX 造 Grok Bot 的人`）。生面孔必须先立身份再报内容。
 - 内容类型词定性：直播 / 实战教程 / 讲座 / 演讲 / 科普 / 播客。
 - 冒号后是**具体做法或事实**——数字、命令名、机制名直接写（`使用 /pr skill 审核 AI 生成的 PR` / `一个月发 2000 个 PR`），不是关键词罗列也不是空壳句式。
 - `丨` 后挂第二信息点或活动名（`AI Engineer Paris 2026` / 具体机制）。
@@ -256,7 +256,7 @@ If you haven't already, run `cook show-source <output-root> <name>` to pull the 
 - **小红书**: ≤20 characters, same skeleton compressed (`Grok Bot 实现原理，开发者亲讲`).
 - **YouTube**: can include "(双语字幕)" or the English title variant (from source context `title`).
 
-Present 3-5 candidates across different angles (直述/数字/反差/引语), each a complete sentence; the user picks or rewrites — their choice is final.
+Present 3-5 candidates across different angles (直述/数字/反差/引语); the user picks or rewrites — their choice is final.
 
 **Description — provide three versions:**
 1. **Full version (B站/YouTube)**: a fixed five-part structure, in this order —
