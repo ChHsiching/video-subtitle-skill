@@ -12,7 +12,7 @@ The pipeline used to be a wall of `ffmpeg` / `yt-dlp` / `python subtitles.py ...
 
 [`cook`](https://github.com/ChHsiching/video-cook) is the single place where commands are assembled. Each step's completion criterion becomes "cook exit 0", which is checkable.
 
-If cook is not installed, the scripts in `scripts/` (`transcribe.py`, `subtitles.py`) still work directly — commands below show both forms. Install cook with `pip install video-cook[all]` to get the wrappers.
+The stage code (`transcribe.py`, `subtitles.py`) ships inside the cook package (`stages/subtitle/`). Install cook with `pip install video-cook[all]`; there is no separate script install.
 
 ## The shared environment — why this design exists
 
@@ -26,7 +26,7 @@ Model caches are also shared across projects for free — whisperX uses `~/.cach
 
 ## Manual fallback (running without the shared environment)
 
-If for some reason you must run `scripts/transcribe.py` and `scripts/subtitles.py` directly without cook, you are responsible for picking a Python that has whisperx installed:
+If for some reason you must run the stage modules directly without the `cook` entry point, you are responsible for picking a Python that has whisperx installed:
 
 - Check candidate venvs in order: `$VIDEO_TOOLS_VENV`, `~/.venvs/video-tools/`, project-local `.venv/`.
 - Run `python -c "import whisperx"` against each. Reuse the first that imports cleanly.
@@ -45,7 +45,7 @@ If for some reason you must run `scripts/transcribe.py` and `scripts/subtitles.p
 
 AMD GPUs (e.g. RX 6750 XT) are NOT usable by PyTorch/CUDA on Windows. A machine with only an AMD GPU or integrated graphics is CPU-only.
 
-Note: the old `scripts/transcribe.py` hardcoded `device="cpu"` in three places, so even passing `float16` would crash. `cook transcribe` fixes this — it parameterizes device based on the auto-detection above. If you must run `transcribe.py` directly, pass `compute_type=float32` to avoid the hardcoded-device bug.
+Note: a historical `transcribe.py` hardcoded `device="cpu"` in three places, so even passing `float16` would crash. `cook transcribe` parameterizes device based on the auto-detection above.
 
 ## `--detach` mode — running long tasks without a shell timeout
 
@@ -70,25 +70,25 @@ ffmpeg -y -i <raw.mp4> -vn -ac 1 -ar 16000 -c:a pcm_s16le <audio.wav>
 
 ### Step 2 — transcription (cook transcribe)
 ```
-python <skill>/scripts/transcribe.py <audio.wav> <output.en.srt> [model_size] [compute_type] [language]
+python <cook-pkg>/stages/subtitle/transcribe.py <audio.wav> <output.en.srt> [model_size] [compute_type] [language]
 ```
 `<skill>` is this skill's folder. Use the absolute path — the user's video may be anywhere on disk.
 
 Linux/macOS nohup wrapper (cook does this internally on Unix):
 ```
-nohup python <skill>/scripts/transcribe.py <audio.wav> <output.srt> large-v3 float32 > <log> 2>&1 &
+nohup python <cook-pkg>/stages/subtitle/transcribe.py <audio.wav> <output.srt> large-v3 float32 > <log> 2>&1 &
 ```
 
 ### Step 4 — subtitle processing (cook subtitles)
 ```
-python <skill>/scripts/subtitles.py shorten <en.srt> <en.short.srt> --lang en
-python <skill>/scripts/subtitles.py shorten <zh.srt> <zh.short.srt> --lang zh --max-zh 56
-python <skill>/scripts/subtitles.py merge-short <en.short.srt> <en.merged.srt> --min-dur 1.2 --max-len 160 --lang en
-python <skill>/scripts/subtitles.py merge-short <zh.short.srt> <zh.merged.srt> --min-dur 1.2 --max-len 56 --lang zh
-python <skill>/scripts/subtitles.py biliteral <en.merged.srt> <zh.merged.srt> <bilingual.srt>
-python <skill>/scripts/subtitles.py ass <bilingual.srt> <bilingual.ass>
+python <cook-pkg>/stages/subtitle/subtitles.py shorten <en.srt> <en.short.srt> --lang en
+python <cook-pkg>/stages/subtitle/subtitles.py shorten <zh.srt> <zh.short.srt> --lang zh --max-zh 56
+python <cook-pkg>/stages/subtitle/subtitles.py merge-short <en.short.srt> <en.merged.srt> --min-dur 1.2 --max-len 160 --lang en
+python <cook-pkg>/stages/subtitle/subtitles.py merge-short <zh.short.srt> <zh.merged.srt> --min-dur 1.2 --max-len 56 --lang zh
+python <cook-pkg>/stages/subtitle/subtitles.py biliteral <en.merged.srt> <zh.merged.srt> <bilingual.srt>
+python <cook-pkg>/stages/subtitle/subtitles.py ass <bilingual.srt> <bilingual.ass>
 # bottom-bar variant:
-python <skill>/scripts/subtitles.py ass <bilingual.srt> <bilingual.bar.ass> --bottom-bar 180
+python <cook-pkg>/stages/subtitle/subtitles.py ass <bilingual.srt> <bilingual.bar.ass> --bottom-bar 180
 ```
 
 ### Step 5 — burn (cook burn)
