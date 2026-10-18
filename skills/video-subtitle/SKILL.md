@@ -236,12 +236,25 @@ If you haven't already, run `cook show-source <output-root> <name>` to pull the 
 
 **No Markdown formatting in the copy-paste content.** Platforms like Bilibili don't render Markdown — `**bold**` shows as literal asterisks, and `-` list markers show as literal hyphens. Use plain text with line breaks. List items use the real character `·` (or numbered `1. 2. 3.`), never markdown `-`. The upload.md file itself can use Markdown headings and `-` to organize its own sections (those are notes for you, not pasted to platforms); only the content inside the paste-blocks (fenced ```` ``` ````) must be plain text with `·`.
 
-**Titles — provide multiple, per platform:**
-- **B站**: professional, shows what the video is about. Up to ~30 chars. Include the author's identity (from source context `uploader`/`channel`) if recognizable.
-- **小红书**: ≤20 characters. Same professional tone as B站, just shorter. Don't use marketing language ("大佬带你", "效率翻倍").
+**Titles — the house skeleton, then your candidates.** Study the channel's own published titles first (the user's Bilibili upload page is the canon; pull the latest 20-30 and read them before writing). The house skeleton they all follow:
+
+```
+[名头/主体] [内容类型词]：[具体做法或事实，数字/命令名直接上]丨[第二卖点或活动名]
+```
+
+- 名头先行：可查证的作者身份（`Matt Pocock 直播：` / `在 SpaceX 造 Grok Bot 的人`）。生面孔必须先立身份再报内容。
+- 内容类型词定性：直播 / 实战教程 / 讲座 / 演讲 / 科普 / 播客。
+- 冒号后是**具体做法或事实**——数字、命令名、机制名直接写（`使用 /pr skill 审核 AI 生成的 PR` / `一个月发 2000 个 PR`），不是关键词罗列也不是空壳句式。
+- `丨` 后挂第二信息点或活动名（`AI Engineer Paris 2026` / 具体机制）。
+
+**Write each candidate as one sentence a developer reads and knows what they'll get.** The failure modes (each shipped once and was rejected): the empty shell ("AI 代码审查实践分享" — swap any noun, still "works"), the keyword dump ("休眠唤醒、云电脑、持久工作流" — terms without a sentence), the colloquial metaphor dressing a technical lecture ("AI 下班了还在干活"), and the circular benefit ("懂原理才会用" — says nothing). For a technical lecture, name the content type (架构讲解/实现原理) + what the viewer walks away able to DO.
+
+**Per platform:**
+- **B站**: house skeleton above; ~25-35 chars is the band.
+- **小红书**: ≤20 characters, same skeleton compressed (`Grok Bot 实现原理，开发者亲讲`).
 - **YouTube**: can include "(双语字幕)" or the English title variant (from source context `title`).
 
-The title should tell the viewer **what happens in the video** (e.g. "从零搭建一个全新项目"), not use jargon they'd need the description to understand.
+Present 3-5 candidates across different angles (直述/数字/反差/引语), each a complete sentence; the user picks or rewrites — their choice is final.
 
 **Description — provide three versions:**
 1. **Full version (B站/YouTube)**: a fixed five-part structure, in this order —
