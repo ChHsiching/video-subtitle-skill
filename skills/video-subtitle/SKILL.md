@@ -51,7 +51,6 @@ Every video's outputs go into a per-video subdirectory, split into folders named
 │   ├── <name>.cooked.{,bar.}mp4
 │   ├── <name>.upload.md
 │   └── cover.jpg
-└── scripts/                        any helper scripts you write for this run
 ```
 
 Rules:
@@ -162,7 +161,7 @@ This surfaces the original title, uploader, channel, links, duration, and crucia
 - **Understand the video's structure before you start.** The description's chapter outline (if present) tells you the arc of the video, so you translate section transitions with the right framing.
 - **Match the author's own terminology.** If the description calls something a "crash course", your translation should reflect that, not invent a different term.
 
-Write translations to `transcript/translations.txt` — **one Chinese line per English cue, line N = cue N** (1-based). Keep the line count exactly equal to the cue count. A helper script (`scripts/make_zh.py` or similar) reads translations.txt + en.srt's timestamps and emits `<name>.zh.srt`. This avoids hand-writing timestamps.
+Write translations to `transcript/translations.txt` — **one Chinese line per English cue, line N = cue N** (1-based). Keep the line count exactly equal to the cue count. `cook make-zh` reads translations.txt + en.srt's timestamps and emits `<name>.zh.srt`, avoiding hand-writing timestamps.
 
 The English SRT is your **source of meaning and timing**, not a rigid grid to fill cell-by-cell. whisperX cuts on speech pauses, which often splits one sentence across 2-3 cues or merges two sentences into one. Your Chinese cues must follow **Chinese sentence boundaries**, not the English cue boundaries. A viewer reads the Chinese — if it's chopped into word-fragments to match English pauses, it's unreadable.
 
@@ -193,7 +192,7 @@ Exit 0 = perfectly aligned. Non-zero = `missing_translations` and/or `extra_tran
 
 Done when `<name>.zh.srt` exists, `cook verify-align` exits 0, `transcript/asr-fixes.md` lists every ASR error you fixed, and both review passes above passed. (Note: cue count matching is enforced by verify-align, not by hand-counting — the translator may legitimately merge short cues, and the downstream `biliteral` merge handles mismatched counts via timestamp-union.)
 
-**Optional: produce `<name>.en.full.srt` for downstream dubbing.** whisperX cuts on speech pauses, producing fragment cues that often split one sentence across 2-3 cues. This is fine for subtitles (each fragment displays briefly), but `video-dubbing` needs **complete sentences** — it synthesizes TTS per cue, and a fragment like "and the" synthesizes badly. If the run might continue to dubbing, produce `<name>.en.full.srt` by running `scripts/make_full_srt.py` from the per-video root — it merges `en.srt`'s fragment cues at sentence-ending punctuation (`. ! ?`) into full-sentence cues. The cue count drops (e.g. 151 fragments → 141 sentences for an 11-min video). `video-dubbing` reads this file and translates it separately into `translations_dub.txt` — the dub script, distinct from this step's subtitle translation because the two have different constraints (subtitles tolerate fragmentation; dubbing requires complete thoughts). Skip this if dubbing won't run.
+**Optional: produce `<name>.en.full.srt` for downstream dubbing.** whisperX cuts on speech pauses, producing fragment cues that often split one sentence across 2-3 cues. This is fine for subtitles (each fragment displays briefly), but `video-dubbing` needs **complete sentences** — it synthesizes TTS per cue, and a fragment like "and the" synthesizes badly. If the run might continue to dubbing, produce `<name>.en.full.srt` with `cook make-full-srt` — it merges `en.srt`'s fragment cues at sentence-ending punctuation (`. ! ?`) into full-sentence cues. The cue count drops (e.g. 151 fragments → 141 sentences for an 11-min video). `video-dubbing` reads this file and translates it separately into `translations_dub.txt` — the dub script, distinct from this step's subtitle translation because the two have different constraints (subtitles tolerate fragmentation; dubbing requires complete thoughts). Skip this if dubbing won't run.
 
 ### Step 4 — Subtitles (shorten + merge-short + bilateral + ASS + cloud-srt)
 
