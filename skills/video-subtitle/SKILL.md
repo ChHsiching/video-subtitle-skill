@@ -108,6 +108,8 @@ cook extract <output-root> <name>
 
 Produces `transcript/<name>.audio.wav` (16kHz mono WAV, the format whisperX needs).
 
+Cook's download now picks the max-bitrate video stream within the target resolution (codec priority vp9 > h264 > av01 — av01 streams at the same resolution often carry half the bitrate of the vp9 twin and were auto-picked four times) and records the landed codecs in `source.json` under `cargo.video_codec`/`audio_codec`. If `cargo` shows av01 where a vp9 stream existed, re-download explicitly.
+
 Done when `cook extract` exits 0. (The old manual `ffmpeg -y -i ... -vn -ac 1 -ar 16000 -c:a pcm_s16le ...` is what cook runs internally — see REFERENCE.md if you need to run it without cook.)
 
 ### Step 2 — Transcribe (the slow step)
