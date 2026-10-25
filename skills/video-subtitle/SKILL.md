@@ -129,6 +129,14 @@ Done when `transcript/<name>.en.srt` exists and the log file contains the `done_
 
 whisperX routinely mis-transcribes proper nouns, product names, and technical terms. If you translate from the raw ASR output, these errors propagate into the Chinese and the burned video — and they are embarrassing when viewers catch them. **Fix the English transcript first, then translate from the clean version.**
 
+**Coverage audit first — dropped speech is the deeper defect.** Word errors are visible in the text; *missing* speech is not. whisperX can drop entire segments when music overlaps them (a 19-second montage voiceover under the intro sting shipped in a release with no subtitles at all — nothing in the text looked wrong). Run the second-witness ASR before the word-level audit:
+
+```bash
+cook dub audit-coverage <output-root> <name>
+```
+
+It re-transcribes the source audio with a second model and reports speech segments no transcript cue covers (exit 1 names the gaps); no `--python` flag — it runs in cook's own interpreter. Until dub separation has run, this is the raw-track-only witness (the report's `tracks_mode` says so) — a weaker second opinion than the vocals-stem pass video-dubbing gets later, still the cheapest hole-finder available at this stage. Resolve every gap — splice the missing speech into `en.srt` as new cues at its real timestamps, verifying the spliced text against the audio (gap text comes from the small audit model) — before auditing words.
+
 Read the full `transcript/<name>.en.srt` end to end. Scan for:
 
 - **Every proper noun, product name, and person's name.** For each one, ask: is this a real product/project/person, or an ASR mis-transcription? **You cannot answer this from memory alone.** A word you've never heard of might be a real product you just don't know about (e.g. OpenClaw, Pi, Sandcastle are all real tools that look like they could be ASR errors). **Search the web for every proper noun you intend to change.** Only change a spelling if you can confirm: (a) the ASR form doesn't exist as a real product, AND (b) the replacement form does exist and fits the context. Known ASR error patterns — "Clawed Code"/"ClawCode" → Claude Code, "Soundcastle" → Sandcastle, "Groom" → GrillMe — are **examples, not an exhaustive list.** Do not pattern-match against them; read every proper noun in context and verify. Cross-reference with source context when available.
@@ -143,7 +151,7 @@ For each fix, edit `transcript/<name>.en.srt` in place and log it to `transcript
 
 If you searched the web to confirm, note the search query you used.
 
-Done when: every proper noun in `en.srt` has been verified (either confirmed correct or fixed), `asr-fixes.md` lists every change you made, and no unrecognized proper nouns remain. **Fan out a subagent to do a full-cue review** — it reads every cue end to end, checks every proper noun in context, and web-searches any it questions. The gate passes only when the subagent confirms the transcript is clean. This is a **gate** — do not start Step 3 until this passes.
+Done when: the coverage audit reports zero gaps, every proper noun in `en.srt` has been verified (either confirmed correct or fixed), `asr-fixes.md` lists every change you made, and no unrecognized proper nouns remain. **Fan out a subagent to do a full-cue review** — it reads every cue end to end, checks every proper noun in context, and web-searches any it questions. The gate passes only when the subagent confirms the transcript is clean. This is a **gate** — do not start Step 3 until this passes.
 
 ### Step 3 — Translate (the agent does this, not a script)
 
