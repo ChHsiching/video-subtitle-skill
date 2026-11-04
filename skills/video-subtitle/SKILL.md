@@ -169,6 +169,8 @@ This surfaces the original title, uploader, channel, links, duration, and crucia
 - **Understand the video's structure before you start.** The description's chapter outline (if present) tells you the arc of the video, so you translate section transitions with the right framing.
 - **Match the author's own terminology.** If the description calls something a "crash course", your translation should reflect that, not invent a different term.
 
+**Chunked translation drift guard.** When translating in chunks of ~100 cues, verify EVERY chunk the moment it is written: check the line count AND three content anchors (read the source cue at chunk start, middle, end and confirm the corresponding finished lines translate exactly those cues). A 94-line window shift survived four chunk verifications that checked only line counts in the 2026-11 run; the anchor check catches a shift at the chunk boundary, where it is a 10-line fix, not a 900-line one.
+
 Write translations to `transcript/translations.txt` — **one Chinese line per English cue, line N = cue N** (1-based). Keep the line count exactly equal to the cue count. `cook make-zh` reads translations.txt + en.srt's timestamps and emits `<name>.zh.srt`, avoiding hand-writing timestamps.
 
 The English SRT is your **source of meaning and timing**, not a rigid grid to fill cell-by-cell. whisperX cuts on speech pauses, which often splits one sentence across 2-3 cues or merges two sentences into one. Your Chinese cues must follow **Chinese sentence boundaries**, not the English cue boundaries. A viewer reads the Chinese — if it's chopped into word-fragments to match English pauses, it's unreadable.
